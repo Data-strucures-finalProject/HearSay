@@ -3,6 +3,14 @@
 Purpose
 - Simple copy/paste commands for exporting/importing and backing up the HearSay `HearSay` database using MongoDB Database Tools.
 
+Schema initialization
+- The Compose backend applies the JSON schema layouts in `db/schemas` automatically before the server starts.
+- To re-apply them manually to the running database:
+  ```powershell
+  docker compose exec backend npm run db:apply-schemas
+  ```
+- Validators use MongoDB's `moderate` validation level, so existing legacy documents are not rejected until they are modified.
+
 Prerequisites
 - MongoDB Database Tools installed (mongodump, mongorestore, mongoexport, mongoimport). See: https://www.mongodb.com/docs/database-tools/
 - Host, port, username, password, and authentication database for your instance.
@@ -192,4 +200,3 @@ mongodump --db $DB --username $USER --password $PASS --authenticationDatabase $A
 # Restore
 mongorestore --archive="$OUTDIR\hearsay.archive.gz" --gzip --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --drop
 ```
-

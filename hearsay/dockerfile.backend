@@ -5,4 +5,4 @@ RUN npm install
 RUN apk add --no-cache curl
 COPY . .
 EXPOSE 5174
-CMD ["npm", "run", "server"]
+CMD ["sh", "-c", "npm run db:apply-schemas && npm run server"]

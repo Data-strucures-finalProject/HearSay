@@ -28,6 +28,7 @@ const {
   SESSION_TTL_SECONDS = '3600',
   SESSION_ROTATE_MS = '3600000',
   SESSIONS_COLLECTION = 'expressSessions',
+  SESSION_COOKIE_SECURE = process.env.NODE_ENV === 'production' ? 'true' : 'false',
   MONGO_DB_NAME,
 } = process.env;
 
@@ -155,7 +156,7 @@ app.use(
     rolling: true,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: SESSION_COOKIE_SECURE === 'true',
       sameSite: 'lax', // Changed to 'lax' for both dev and prod
       maxAge: SESSION_TTL_NUM * 1000,
       path: '/',
@@ -174,7 +175,7 @@ app.use(
 // Rotate session id every SESSION_ROTATE_MS to mitigate fixation
 app.use((req, res, next) => {
   // rotate session using coerced numeric value
-  if (!req.session) return next();
+  if (!req.session?.user) return next();
   const now = Date.now();
   const last = req.session.__lastRotated || 0;
   if (now - last > SESSION_ROTATE_MS_NUM) {
