@@ -1,157 +1,45 @@
-@startuml SiteDiagram
-' Title
-title HearSay — Site / Component Diagram
-
-' =========================
-' Actors & External Systems
-' =========================
-actor "End User (Browser)" as User
-rectangle "Spotify Web API" as Spotify #DDDDFF
-rectangle "Google OAuth\n(OpenID Connect)" as Google #FFDDDD
-rectangle "Docker / Nginx\n(reverse proxy + static)" as NGINX #F3F3F3
-
-' =========================
-' Frontend
-' =========================
-package "Frontend (React - hearsay/src)" {
-  component "App Router\nRoutes" as AppRouter
-  component "Header / Nav" as Header
-  component "LandingPage" as Landing
-  component "SearchPage" as Search
-  component "AlbumRatingPage" as AlbumPage
-  component "SongRatingPage" as SongPage
-  component "ArtistPage" as ArtistPage
-  component "MyReviewsPage" as MyReviews
-  component "RecentReviewsPage" as RecentReviews
-  component "ProfilePage" as Profile
-  component "RandomPage" as Random
-  component "HeadphoneRating UI" as HeadphoneUI
-  component "AuthPage / AuthCallback" as Auth
-  component "ProtectedRoute" as ProtectedRoute
-  component "Client API (calls /api/*)" as ClientApi
+@startuml HearSayCurrent
+!pragma layout smetana
+title HearSay - Current Runtime Architecture
+actor "Browser user" as User
+package "React SPA (hearsay/src)" {
+  component "App / Header\nRouter + theme/toast/auth providers" as App
+  component "Public pages\nLanding, Search, Random\nArtist, Album, Song\nRecent Reviews, Review details" as Public
+  component "Protected pages\nProfile, My Reviews" as Protected
+  component "AuthPage / AuthCallback\nLocal auth + Google PKCE" as Auth
 }
-
-' Frontend relationships
-User --> Header : interacts
-User --> Landing
-User --> Search
-User --> AlbumPage
-User --> SongPage
-User --> ArtistPage
-User --> MyReviews
-User --> RecentReviews
-User --> Profile
-User --> Auth
-
-Header --> ClientApi
-AppRouter --> Landing
-AppRouter --> Search
-AppRouter --> AlbumPage
-AppRouter --> SongPage
-AppRouter --> ArtistPage
-AppRouter --> MyReviews
-AppRouter --> RecentReviews
-AppRouter --> Profile
-AppRouter --> Random
-
-AlbumPage --> HeadphoneUI
-SongPage --> HeadphoneUI
-ArtistPage --> HeadphoneUI
-MyReviews --> HeadphoneUI
-
-AlbumPage --> ClientApi : /api/albums/:id\n/api/reviews/upsert\n/api/reviews/my
-SongPage --> ClientApi : /api/spotify/track/:id\n/api/reviews/upsert\n/api/reviews/my
-ArtistPage --> ClientApi : /api/spotify/artist/:id\n/api/reviews/upsert\n/api/reviews/my
-MyReviews --> ClientApi : /api/reviews/my/list\n/api/reviews/my\n/api/reviews/upsert
-RecentReviews --> ClientApi : /api/reviews/recent
-Search --> ClientApi : /api/spotify/search
-Random --> ClientApi : /api/spotify/new-releases\n/api/spotify/search
-
-Auth --> ClientApi : /api/auth/google/exchange\n/api/me
-
-' =========================
-' Backend
-' =========================
-package "Backend (Express - server)" {
-  component "API Proxy / Server" as Server
-  component "Spotify Proxy\n(/api/spotify/*)" as SpotifyProxy
-  component "Auth endpoints\n(/api/auth/*, /api/me)" as AuthEndpoints
-  component "Reviews endpoints\n(/api/reviews/*)" as ReviewsApi
-  component "Albums endpoints\n(/api/albums/:id)" as AlbumsApi
-  component "Health / Debug endpoints" as Health
-}
-
-ClientApi --> NGINX : static + /api proxy
-NGINX --> Server : proxy /api requests
-Server --> SpotifyProxy : spotify requests (server-side token)
-Server --> AuthEndpoints
-Server --> ReviewsApi
-Server --> AlbumsApi
-Server --> Health
-
-SpotifyProxy --> Spotify : server-side app auth + REST
-AuthEndpoints --> Google : token exchange (via POST)
-AuthEndpoints --> Server : session setup
-
-' =========================
-' Database
-' =========================
-package "MongoDB (DB)" as DB {
-  database "Users" as Users
-  database "Reviews" as Reviews
-  database "Albums" as Albums
-  database "Artists" as Artists
-  database "Songs" as Songs
-  database "Sessions" as Sessions
-}
-
-Server --> Users : user upsert / queries
-ReviewsApi --> Reviews : create / update / delete / list
-AlbumsApi --> Albums : get saved album metadata
-Server --> Albums : ensure album docs and songs backfill
-Server --> Artists : ensure artist docs
-Server --> Songs : ensure song docs
-Server --> Sessions : session store (connect-mongo)
-
-' =========================
-' Data flows / Notes
-' =========================
-note top of ReviewsApi
-  - Reviews documents store:
-    - user.oid, item.type, item.oid
-    - rating (stored scaled x2 as Int32)
-    - text
-    - trackRatings (object) for album-level per-track ratings
-  - /api/reviews/upsert accepts trackRatings for albums.
-  - /api/reviews/my/list returns trackRatings for album reviews.
+component "Vite dev proxy :5173\nor frontend Nginx :8080" as Proxy
+component "Express API :5174\nhearsay/server/index.js" as API
+component "dbAPI.js\nNative MongoDB driver" as DBAPI
+component "spotifyAPI.js\nServer-side app token" as SpotifyAPI
+database "MongoDB hearsay\nusers, reviews, artists, albums, songs" as Data
+database "expressSessions\nconnect-mongo" as Sessions
+cloud "Spotify Web API" as Spotify
+cloud "Google token / userinfo / authorization" as Google
+component "schema-HearSay-*.json\napply-schemas.mjs" as Schemas
+User --> App
+App --> Public
+App --> Protected
+App --> Auth
+Public --> Proxy : fetch /api
+Protected --> Proxy : cookie-authenticated fetch
+Auth --> Proxy : local login and code exchange
+Auth --> Google : PKCE authorization redirect
+Proxy --> API
+API --> DBAPI
+DBAPI --> Data
+API --> Sessions
+API --> SpotifyAPI
+SpotifyAPI --> Spotify
+API --> Google : code exchange + userinfo
+Schemas --> Data : validators applied at container startup
+note bottom of Public
+ Album track submission saves individual song reviews,
+ averages rated tracks, then saves an album rating.
+ At least one track is required. These writes are sequential.
 end note
-
-note top of ClientApi
-  - Frontend submits per-track ratings locally then:
-    - validates all tracks rated -> computes album avg -> calls /api/reviews/upsert with trackRatings and album rating
-  - My Reviews page shows one entry per album; Expand toggles trackRatings
+note bottom of Auth
+ AuthPage reads VITE_API_BASE at build time.
+ Other pages generally use same-origin /api.
 end note
-
-' =========================
-' Deployment artifacts
-' =========================
-package "Deployment" {
-  component "Docker Compose\n(backend, mongodb)" as Compose
-  component "NGINX config" as NginxCfg
-  component "Dockerfile (frontend / backend)" as Dockerfiles
-}
-NGINX --> NginxCfg
-Compose --> Server
-Compose --> DB
-Dockerfiles --> NGINX
-
-' =========================
-' Directions & Legend
-' =========================
-legend right
-  || Solid arrow || synchronous request / navigation
-  || Rectangle || component / service
-  || Database cylinder || persistent store
-endlegend
-
 @enduml
