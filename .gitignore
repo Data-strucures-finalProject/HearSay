@@ -1,3 +1,5 @@
 db/data/*
 .env
+.env.*
+!.env.example
 nginxrevproxy/**
