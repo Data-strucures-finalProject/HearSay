@@ -1,202 +1,99 @@
-## MongoDB CLI quick guide (HearSay)
+# MongoDB operations
 
-Purpose
-- Simple copy/paste commands for exporting/importing and backing up the HearSay `HearSay` database using MongoDB Database Tools.
+The app defaults to database `hearsay` and lowercase collections `users`, `reviews`, `artists`, `albums`, `songs` and `expressSessions`. Substitute configured names when operating on another instance. JSON exports in `db/schemas/HearSay.*.json` use capitalized filenames but target lowercase collections.
 
-Schema initialization
-- The Compose backend applies the JSON schema layouts in `db/schemas` automatically before the server starts.
-- To re-apply them manually to the running database:
-  ```powershell
-  docker compose exec backend npm run db:apply-schemas
-  ```
-- Validators use MongoDB's `moderate` validation level, so existing legacy documents are not rejected until they are modified.
+## Schema setup
 
-Prerequisites
-- MongoDB Database Tools installed (mongodump, mongorestore, mongoexport, mongoimport). See: https://www.mongodb.com/docs/database-tools/
-- Host, port, username, password, and authentication database for your instance.
+Compose applies `schema-HearSay-*.json` validators through the backend startup command. To reapply them explicitly:
 
-Platform: Linux / macOS (bash)
-
-Safe variables (bash)
-```bash
-DB='hearsay'
-USER='admin'
-# Avoid hardcoding passwords in scripts for production
-PASS='password'
-AUTHDB='admin'
-HOST='localhost'
-PORT=27017
-OUTDIR="/var/backups/hearsay-$(date +%Y%m%d%H%M%S)"
-mkdir -p "$OUTDIR"
-```
-
-Full database backup (directory)
-```bash
-mongodump --db "$DB" --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --out "$OUTDIR"
-```
-
-Full database backup (single compressed archive)
-```bash
-mongodump --host localhost:27017 --db hearsay --out ./ --username admin --password password --authenticationDatabase admin --archive example-base.zip --zip
-```
-
-Restore from directory
-```bash
-# This will drop collections in the target DB before restoring
-mongorestore --nsInclude "$DB.*" --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --drop --dir "$OUTDIR/$DB"
-```
-
-Restore from archive
-```bash
-mongorestore --archive="$OUTDIR/hearsay.archive.gz" --gzip --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --drop
-```
-
-Export a single collection to JSON (jsonArray, all docs)
-```bash
-mongoexport --db "$DB" --collection Reviews --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --out "$OUTDIR/reviews.json" --jsonArray
-```
-
-Export to CSV (specify fields)
-```bash
-mongoexport --db "$DB" --collection Songs --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --type=csv --fields "songId,title,artist,album" --out "$OUTDIR/songs.csv"
-```
-
-Import JSON (jsonArray)
-```bash
-mongoimport --db "$DB" --collection Reviews --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --file "$OUTDIR/reviews.json" --jsonArray --drop
-```
-
-Import CSV (headerline)
-```bash
-mongoimport --db "$DB" --collection Songs --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --type=csv --headerline --file "$OUTDIR/songs.csv" --drop
-```
-
-Secure password prompt (bash)
-```bash
-read -s -p "MongoDB password: " PASS; echo
-# now use $PASS in the commands above; it won't be stored in shell history
-```
-
-Use connection URI (recommended for TLS/Atlas)
-```bash
-URI="mongodb://$USER:$PASS@$HOST:$PORT/$AUTHDB"
-mongodump --uri "$URI" --archive="$OUTDIR/hearsay.archive.gz" --gzip
-```
-
-Tips and notes (Linux/macOS)
-- Replace plain passwords with secure methods in production: read from environment variables, a secure store, or stdin. Avoid hardcoding credentials in scripts.
-- Use file permissions to protect backups: chmod 600 "$OUTDIR"/*
-- Use `--drop` on restore/import to replace existing data. Omit to merge.
-- Use `--gzip` and `--archive` for a single compressed file that's easy to transfer.
-- For SRV/Atlas URIs use `--uri "mongodb+srv://..."` and add `--tls`/`--ssl` flags if required.
-
-Troubleshooting
-- "command not found": install MongoDB Database Tools (https://www.mongodb.com/docs/database-tools/installation/).
-- Authentication errors: confirm the user exists in the `$AUTHDB` and has correct roles (read for export, readWrite for import/restore).
-- Permission errors when writing files: ensure the target backup directory is writable or use `sudo` where appropriate.
-
-References
-- mongoexport docs: https://www.mongodb.com/docs/database-tools/mongoexport
-- mongoimport docs: https://www.mongodb.com/docs/database-tools/mongoimport
-- mongodump/mongorestore docs: https://www.mongodb.com/docs/database-tools/mongodump
-
-Quick example (one-liner archive dump + restore)
-```bash
-# Dump
-mongodump --db "$DB" --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --archive="$OUTDIR/hearsay.archive.gz" --gzip
-# Restore
-mongorestore --archive="$OUTDIR/hearsay.archive.gz" --gzip --username "$USER" --password "$PASS" --authenticationDatabase "$AUTHDB" --host "$HOST" --port $PORT --drop
-```
-
----
-Small, copyable commands above should cover typical export/import and backup/restore workflows for the HearSay project on Linux/macOS (bash). A Windows PowerShell section remains below as an alternative for Windows users.
-
-Platform: Windows (PowerShell) — alternative
-
-Safe variables (PowerShell)
 ```powershell
-$DB = 'HearSay'
-$USER = 'admin'
-$PASS = 'password'   # avoid hardcoding in production
-$AUTHDB = 'admin'
-$HOST = 'localhost'
-$PORT = 27017
-$OUTDIR = "C:\backups\hearsay-$(Get-Date -Format yyyyMMddHHmmss)"
-New-Item -ItemType Directory -Path $OUTDIR -Force | Out-Null
+docker compose exec backend npm run db:apply-schemas
 ```
 
-Full database backup (directory)
+For native development, from `hearsay` with `.env.development` configured:
+
 ```powershell
-mongodump --db $DB --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --out $OUTDIR
+npm run db:apply-schemas
 ```
 
-Full database backup (single compressed archive)
+These commands create/update validators; they do not seed sample data or create reporting views. `create-*.js` files are separate manual MongoDB shell/GUI scripts and are not the automatic initializer. Their validation types differ from the JSON source, so choose one schema source deliberately.
+
+Validation is moderate: new inserts and updates to already-valid documents are checked; existing invalid documents may remain invalid on update. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
+
+## Prerequisites
+
+Install MongoDB Database Tools (mongodump, mongorestore, mongoexport, mongoimport). The commands below run on the host against Compose's published port 27017. Credentials need appropriate read/write or administrative permissions. Omitting password arguments lets Database Tools prompt rather than recording a password in shell history.
+
+## Windows PowerShell
+
+Use task-specific variable names; `$Host` is a built-in read-only PowerShell variable.
+
 ```powershell
-mongodump --db $DB --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --archive="$OUTDIR\hearsay.archive.gz" --gzip
+$mongoDb = 'hearsay'
+$mongoUser = 'admin'
+$mongoAuthDb = 'admin'
+$mongoServer = 'localhost'
+$mongoPort = 27017
+$backupDir = Join-Path $env:TEMP ('hearsay-backup-' + (Get-Date -Format yyyyMMddHHmmss))
+New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+$archivePath = Join-Path $backupDir 'hearsay.archive.gz'
 ```
 
-Restore from directory
+Create a compressed archive:
+
 ```powershell
-# This will drop collections in the target DB before restoring
-mongorestore --nsInclude "$DB.*" --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --drop --dir "$OUTDIR\$DB"
+mongodump --host $mongoServer --port $mongoPort --db $mongoDb --username $mongoUser --authenticationDatabase $mongoAuthDb --archive=$archivePath --gzip
 ```
 
-Restore from archive
+Restore that archive into its recorded namespaces (without dropping collections):
+
 ```powershell
-mongorestore --archive="$OUTDIR\hearsay.archive.gz" --gzip --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --drop
+mongorestore --host $mongoServer --port $mongoPort --username $mongoUser --authenticationDatabase $mongoAuthDb --nsInclude="$mongoDb.*" --archive=$archivePath --gzip
 ```
 
-Export a single collection to JSON (jsonArray, all docs)
+Existing duplicate IDs can cause conflicts; restoration is not an automatic merge/update operation. `--drop` replaces matching collections and removes their existing data; use it only when intentionally replacing the target and after verifying a backup. Do not restore into the live database just to inspect an archive.
+
+Export reviews to Extended JSON and songs to flat CSV:
+
 ```powershell
-mongoexport --db $DB --collection Reviews --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --out "$OUTDIR\reviews.json" --jsonArray
+mongoexport --host $mongoServer --port $mongoPort --db $mongoDb --collection reviews --username $mongoUser --authenticationDatabase $mongoAuthDb --out="$backupDir/reviews.json" --jsonArray
+mongoexport --host $mongoServer --port $mongoPort --db $mongoDb --collection songs --username $mongoUser --authenticationDatabase $mongoAuthDb --type=csv --fields='spotifyTrackID,title,artist.name,album.name' --out="$backupDir/songs.csv"
 ```
 
-Export to CSV (specify fields)
+Import into scratch collections rather than changing the active app data:
+
 ```powershell
-mongoexport --db $DB --collection Songs --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --type=csv --fields "songId,title,artist,album" --out "$OUTDIR\songs.csv"
+mongoimport --host $mongoServer --port $mongoPort --db $mongoDb --collection reviews_import --username $mongoUser --authenticationDatabase $mongoAuthDb --file="$backupDir/reviews.json" --jsonArray
+mongoimport --host $mongoServer --port $mongoPort --db $mongoDb --collection songs_import --username $mongoUser --authenticationDatabase $mongoAuthDb --type=csv --headerline --file="$backupDir/songs.csv"
 ```
 
-Import JSON (jsonArray)
-```powershell
-mongoimport --db $DB --collection Reviews --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --file "$OUTDIR\reviews.json" --jsonArray --drop
+CSV is a flat interchange format; it does not preserve nested documents, ObjectIds, validators or indexes. Use a BSON archive for full backups and Extended JSON for document interchange.
+
+## Linux/macOS Bash
+
+```bash
+mongo_db='hearsay'
+mongo_user='admin'
+mongo_auth_db='admin'
+mongo_server='localhost'
+mongo_port=27017
+backup_dir="${TMPDIR:-/tmp}/hearsay-backup-$(date +%Y%m%d%H%M%S)"
+mkdir -p "$backup_dir"
+mongodump --host "$mongo_server" --port "$mongo_port" --db "$mongo_db" --username "$mongo_user" --authenticationDatabase "$mongo_auth_db" --archive="$backup_dir/hearsay.archive.gz" --gzip
+mongorestore --host "$mongo_server" --port "$mongo_port" --username "$mongo_user" --authenticationDatabase "$mongo_auth_db" --nsInclude="$mongo_db.*" --archive="$backup_dir/hearsay.archive.gz" --gzip
+mongoexport --host "$mongo_server" --port "$mongo_port" --db "$mongo_db" --collection reviews --username "$mongo_user" --authenticationDatabase "$mongo_auth_db" --jsonArray --out="$backup_dir/reviews.json"
 ```
 
-Import CSV (headerline)
-```powershell
-mongoimport --db $DB --collection Songs --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --type=csv --headerline --file "$OUTDIR\songs.csv" --drop
-```
+`db/backup.sh` and `db/restore.sh` are legacy Bash helpers: they hardcode database `HearSay`, admin/localhost/27017; restore also uses `--drop`. Review/edit their configuration before using them. The explicit commands above use the current default database instead. User deduplication is also a mutating maintenance operation; back up and assess linked reviews before running it.
 
-Tips and notes
-- Replace plain passwords with secure methods in production. Example (interactive) to avoid leaving password in the command history:
-  ```powershell
-  $secure = Read-Host -Prompt 'MongoDB password' -AsSecureString
-  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-  $passPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-  # use $passPlain in the commands above; then clear it from memory
-  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-  Remove-Variable passPlain
-  ```
+## Compass and connections
 
-- You can combine connection parameters into a single URI (recommended when using TLS/Atlas):
-  ```powershell
-  $uri = "mongodb://$USER:$PASS@$HOST:$PORT/$AUTHDB"
-  mongodump --uri "$uri" --archive="$OUTDIR\hearsay.archive.gz" --gzip
-  ```
+Compass can import/export collection data as JSON/CSV. These operations are separate from downloads in the HearSay web UI. Select the intended database/collection and format explicitly. For remote/Atlas connections use the appropriate authenticated URI and TLS settings; percent-encode special characters in URI credentials.
 
-- For Atlas or SRV URIs use `--uri "mongodb+srv://..."` and add `--ssl` / `--tls` flags if required.
-- `--drop` on restore/import removes existing documents/collections before writing. Omit if you want to merge.
-- `--jsonArray` is required if your JSON file contains an array of documents. Otherwise use newline-delimited JSON.
-- Use `--gzip` and `--archive` to produce a single compressed file suitable for transfer.
+## References
 
-Troubleshooting
-- "command not found": install MongoDB Database Tools (https://www.mongodb.com/docs/database-tools/installation/).
-- Authentication errors: confirm the user exists in the `$AUTHDB` and has correct roles (read for export, readWrite for import/restore).
-- Permission errors when writing files: run PowerShell as Administrator or choose a writeable directory.
-
-Quick example (one-liner archive dump + restore)
-```powershell
-# Dump
-mongodump --db $DB --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --archive="$OUTDIR\hearsay.archive.gz" --gzip
-# Restore
-mongorestore --archive="$OUTDIR\hearsay.archive.gz" --gzip --username $USER --password $PASS --authenticationDatabase $AUTHDB --host $HOST --port $PORT --drop
-```
+- [Database Tools installation](https://www.mongodb.com/docs/database-tools/installation/)
+- [mongodump](https://www.mongodb.com/docs/database-tools/mongodump/)
+- [mongorestore](https://www.mongodb.com/docs/database-tools/mongorestore/)
+- [mongoexport](https://www.mongodb.com/docs/database-tools/mongoexport/)
+- [mongoimport](https://www.mongodb.com/docs/database-tools/mongoimport/)
