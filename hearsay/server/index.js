@@ -21,6 +21,7 @@ import * as spotify from './spotifyAPI.js';
 import { emailOwnerFilter, initializeUserEmails, mountEmailRoutes, publicProfile, userProjection } from './userEmails.js';
 import { mountAccountData } from './accountData.js';
 import { initializeDefaultAdmin, mountAdminRoutes } from './admin.js';
+import { installViews, mountInsightRoutes } from './insights.js';
 
 // Load .env in development so server can read GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 dotenv.config();
@@ -142,6 +143,7 @@ await db.connectMongo().catch((err) => {
 // Email alias uniqueness must be established before accepting authentication.
 await initializeUserEmails(db.getDb());
 await initializeDefaultAdmin(db.getDb());
+await installViews(db.getDb());
 // Other legacy index failures are reported without stopping startup.
 try {
   await db.ensureUserIndexes();
@@ -179,6 +181,7 @@ app.use(
 
 mountAccountData(app, db.getDb(), { sessionName: SESSION_NAME, sessionsCollection: SESSIONS_COLLECTION });
 mountAdminRoutes(app, db.getDb());
+mountInsightRoutes(app, db.getDb());
 
 // Rotate session id every SESSION_ROTATE_MS to mitigate fixation
 app.use((req, res, next) => {

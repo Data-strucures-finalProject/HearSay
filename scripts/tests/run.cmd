@@ -9,12 +9,12 @@ if /I "%suite%"=="--setup" (
 )
 if /I "%~2"=="--setup" set "setup=1"
 set "valid="
-for %%S in (all runtime browser smoke admin google-link google-profile account-data artist-feed) do if /I "%suite%"=="%%S" (
+for %%S in (all runtime insights browser smoke admin google-link google-profile account-data artist-feed theme) do if /I "%suite%"=="%%S" (
   set "valid=1"
   set "suite=%%S"
 )
 if not defined valid (
-  echo Usage: run.cmd [all^|runtime^|browser^|smoke^|admin^|google-link^|google-profile^|account-data^|artist-feed] [--setup]
+  echo Usage: run.cmd [all^|runtime^|insights^|browser^|smoke^|admin^|google-link^|google-profile^|account-data^|artist-feed^|theme] [--setup]
   exit /b 2
 )
 pushd "%~dp0..\.."

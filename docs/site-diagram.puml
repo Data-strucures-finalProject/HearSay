@@ -6,7 +6,8 @@ package "React SPA (hearsay/src)" {
   component "App / Header\nRouter + theme/toast/auth providers" as App
   component "Public pages\nLanding, Search, Random\nArtist, Album, Song\nRecent Reviews, Review details" as Public
   component "Protected pages\nProfile, My Reviews" as Protected
-  component "Admin overview\nServer-verified admin role" as Admin
+  component "Admin overview / integrity\nServer-verified admin role" as Admin
+  component "Discover / Community\nTen-view tables and charts" as Insights
   component "AuthPage / AuthCallback\nLocal auth + Google PKCE" as Auth
 }
 component "Vite dev proxy :5173\nor frontend Nginx :8080" as Proxy
@@ -15,6 +16,7 @@ component "dbAPI.js\nNative MongoDB driver" as DBAPI
 component "spotifyAPI.js\nServer-side app token" as SpotifyAPI
 database "MongoDB hearsay\nusers, reviews, artists, albums, songs" as Data
 database "expressSessions\nconnect-mongo" as Sessions
+database "Ten read-only analytical views\nInstalled/reconciled at startup" as Views
 cloud "Spotify Web API" as Spotify
 cloud "Google token / userinfo / authorization" as Google
 component "schema-HearSay-*.json\napply-schemas.mjs" as Schemas
@@ -22,6 +24,8 @@ User --> App
 App --> Public
 App --> Protected
 App --> Admin
+App --> Insights
+Insights --> Proxy : public view queries
 App --> Auth
 Public --> Proxy : fetch /api
 Protected --> Proxy : cookie-authenticated fetch
@@ -31,6 +35,8 @@ Auth --> Google : PKCE authorization redirect
 Proxy --> API
 API --> DBAPI
 DBAPI --> Data
+API --> Views : validated filters / paging / chart facets
+Views --> Data
 API --> Sessions
 note right of API
  One-time default admin bootstrap.

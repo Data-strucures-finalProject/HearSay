@@ -67,17 +67,17 @@ export default function ProfilePage() {
 
   if (state.loading) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-8" aria-label="Profile loading">
         <div className="animate-pulse h-32 bg-gray-200 dark:bg-gray-800" />
-      </div>
+      </main>
     );
   }
 
   if (state.error) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-red-600">{state.error}</div>
-      </div>
+      <main className="container mx-auto px-4 py-8">
+        <div role="alert" className="text-red-600 dark:text-red-400">{state.error}</div>
+      </main>
     );
   }
 
@@ -98,13 +98,13 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <main className="container mx-auto px-4 py-8">
       <div className="max-w-2xl mx-auto border-2 border-black dark:border-white bg-white dark:bg-gray-900">
         <div className="p-6 border-b-2 border-black dark:border-white flex items-center gap-4">
           <Avatar src={pictureSrc} name={displayName} size={64} />
-          <div>
+          <div className="min-w-0 break-words">
             <h1 className="text-2xl font-bold text-black dark:text-white"><span className="text-black dark:text-white">{displayName}</span></h1>
-            {p.email && <div className="text-gray-700 dark:text-gray-300">{p.email}</div>}
+            {p.email && <div className="break-all text-gray-700 dark:text-gray-300">{p.email}</div>}
           </div>
         </div>
 
@@ -348,6 +348,6 @@ export default function ProfilePage() {
           navigate('/auth', { replace: true });
         }} />
       </div>
-    </div>
+    </main>
   );
 }

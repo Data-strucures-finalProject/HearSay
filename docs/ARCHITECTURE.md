@@ -7,6 +7,9 @@ flowchart TD
     Browser[Browser: React SPA] --> Proxy[Vite dev proxy or frontend Nginx]
     Proxy --> API[Express REST/JSON API]
     API --> Mongo[(MongoDB: users, reviews, artists, albums, songs)]
+    API --> Views[Ten read-only MongoDB views]
+    Views --> Mongo
+    Discover[Discover and Community tables/charts] --> API
     API --> Sessions[(connect-mongo: expressSessions)]
     API --> Spotify[Spotify Web API: server app token]
     Browser --> Google[Google authorization with PKCE]
@@ -31,6 +34,7 @@ flowchart LR
     Profile --> Delete[Confirmed account and owned-data deletion]
     Session --> Role{Database role check}
     Role --> Admin[Admin-only overview]
+    Admin --> Integrity[User/review integrity table]
     Session --> Write[Own review create/update/delete]
     Album[Album track submission] --> Songs[Save each rated song review]
     Songs --> Average[Average rated tracks]
@@ -46,6 +50,8 @@ The Admin page and its API require the persisted admin role; cached client state
 authorize access. Account exports exclude credentials. Account deletion removes owned
 reviews, references and sessions while retaining shared music metadata; a durable marker
 allows retrying incomplete cleanup on the standalone MongoDB deployment.
+
+The ten Phase II view definitions are installed/reconciled during backend startup. Public Discover/Community APIs query MongoDB views with validated search, filters, paging and chart facets. The integrity view uses the existing admin role middleware. See [view-to-page mapping](ANALYTICAL_VIEWS.md).
 
 ## Historical rendered diagrams
 

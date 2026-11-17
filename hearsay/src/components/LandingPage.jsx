@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { searchSpotify } from '../config/spotify';
 
 const MIN_LOADING_TIME = 1000;
@@ -161,6 +162,11 @@ export default function LandingPage() {
 
   return (
     <main className="container mx-auto px-4 py-8">
+      <nav aria-label="Explore HearSay" className="flex flex-wrap gap-4 mb-8 text-black dark:text-white">
+        <Link className="underline" to="/discover?view=2">Community favourites</Link>
+        <Link className="underline" to="/discover?view=9">Be the first to review</Link>
+        <Link className="underline" to="/discover?view=10">Popular on Spotify</Link>
+      </nav>
       {error && (
         <div className="text-red-500 mb-4 p-4 border-2 border-red-500">
           {error}

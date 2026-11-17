@@ -8,6 +8,8 @@ Express 5 uses the native MongoDB driver, express-session, connect-mongo and bcr
 
 MongoDB, email-alias initialization and default-admin bootstrap complete before the API listens. Alias/default-admin index failures stop startup; other legacy user/review index failures are logged. `/api/health` reports process health; `/api/test` actually pings the database.
 
+Startup also reconciles all ten Phase II MongoDB views through `server/insights.js`; view-installation errors stop startup. Public `GET /api/insights/:id` serves views 1–3 and 5–10, and admin-only `GET /api/admin/insights/4` serves the integrity view. Both use bounded, validated database search/filter/sort/pagination and chart facets with a five-second query limit. See [analytical view contracts, semantics and tests](ANALYTICAL_VIEWS.md). Explicit installation: `npm run db:apply-views`.
+
 ## Endpoint inventory
 
 Authenticated routes require a server session with `user.oid`. Review mutations are scoped to that user. All paths below include `/api`.

@@ -2,11 +2,15 @@
 
 HearSay is a music discovery and review app using React, Vite, Express and the native MongoDB driver. Users browse Spotify music and manage song, album and artist reviews.
 
+Discover and Community integrate the ten Phase II analytical views into searchable, sortable HTML tables with database-driven charts and links to music/reviews. Discover includes **Popular on Spotify**, which ranks stored artists by Spotify follower count. Administrators can inspect user/review relationships from the protected Admin page. Light/dark mode follows the user's saved choice across desktop and mobile layouts.
+
 ## Documentation
 
 - [Backend API and data model](docs/BACKEND_REFERENCE.md)
 - [Frontend routes and behavior](docs/FRONTEND_REFERENCE.md)
 - [Architecture and diagrams](docs/ARCHITECTURE.md)
+- [Ten analytical views, pages and query contracts](docs/ANALYTICAL_VIEWS.md)
+- [Light/dark webpage review and regression checks](docs/UI_REVIEW.md)
 - [Database setup, import/export and backups](db/mongo-cli.md)
 
 ## Prerequisites
@@ -31,6 +35,8 @@ docker compose ps
 Open http://localhost:8080. The backend is exposed on port 5174. Frontend Nginx serves the SPA and proxies `/api` to the backend. The optional `nginx-rev-proxy` service is Nginx Proxy Manager (80/443, management UI 8181); public host/TLS configuration is separate.
 
 The backend applies validators before starting. Sample-data import is a separate operation. Data persists in `db/data`. `docker compose down` stops containers without deleting that directory.
+
+Backend startup also installs the ten Phase II analytical views in the configured database. Discover and Community expose their public tables, database search/filter controls and charts; Admin includes the protected user/review integrity table. “Popular on Spotify” ranks cached artists by Spotify followers. View creation/update permissions are required; see the analytical views reference above.
 
 Frontend configuration is embedded at build time. The Dockerfile forwards the Google client ID and redirect URI build arguments. AuthPage and review clients default to same-origin `/api`; see the frontend reference for optional overrides.
 

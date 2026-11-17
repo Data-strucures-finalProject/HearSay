@@ -8,6 +8,7 @@
     "buildd": "vite build",
     "server": "node server/index.js",
     "db:apply-schemas": "node server/scripts/apply-schemas.mjs",
+    "db:apply-views": "node server/scripts/apply-views.mjs",
     "dev:alll": "concurrently \"npm run server\" \"npm run dev\"",
     "db:dedupe-users": "node server/scripts/dedupe-users.mjs",
     "lint": "eslint .",

@@ -17,12 +17,16 @@ Reviewed November 17, 2026 against `hearsay/src`. React 19, React Router 7, Vite
 | `/recent-reviews` | RecentReviewsPage | Public song/album/artist sections with independent pagination and links to details |
 | `/review/:reviewId` | ReviewPage | Public review details; author edit controls |
 | `/profile` | ProfilePage | Protected; profile, name editing, password setup, Google linking, Google detail choices, email management, CSV/PDF downloads, account deletion and logout |
-| `/admin` | AdminPage | Admin-only overview counts; server session role verified before rendering |
+| `/admin` | AdminPage | Admin-only overview counts and user/review integrity table; server session role verified before rendering |
+| `/discover?view=2` | InsightsPage | Community favourites; other categories are stored catalogue (5), album ratings (6), genres (8), first-review opportunities (9), Popular on Spotify (10) |
+| `/community?view=1` | InsightsPage | Album review table; other categories are above-average opinions (3) and reviewer activity (7) |
 | `/random` | RandomPage | Song/album discovery from Spotify results |
 
 ProtectedRoute checks `/api/me` and redirects guests to `/auth`. Ordinary protected pages may initially accept cached user presence while waiting; `/admin` always waits for the server role and redirects non-admins home. Backend session/role/ownership checks protect API operations. Navbar, Layout and TrackList are not mounted by App; TrackList contains a duplicate profile implementation.
 
 ## Review behavior and limits
+
+Discover/Community use a shared InsightsPanel with captioned HTML tables, database-side literal text search, allowlisted sorting, 20-row pagination, loading/empty/error/retry states and media/review links. Catalogue adds a song/album filter; admin adds a relationship-status filter. Views 6/7/8/10 have accessible HTML/CSS bar charts computed from up to ten matching database results independently of table pagination. Navigation includes desktop/mobile links and home/Recent Reviews entry points. See [analytical view semantics and validation](ANALYTICAL_VIEWS.md).
 
 Headphone controls use half-star increments. Most forms enforce 1,000 words; client sanitizeInput additionally caps text at 5,000 characters and strips selected markup patterns. The server uses word count instead. Stored ratings are doubled; API responses use stars. Zero means unrated.
 
@@ -56,6 +60,8 @@ AuthPage and review wrappers default to `/api`; Spotify wrappers and many compon
 From `hearsay`: npm ci; npm run dev:all; npm run build; npm run lint. Separate watch commands are dev:backend and dev:frontend. Vite runs on 5173 and proxies `/api` to 5174; frontend Docker serves on host port 8080. Preview has no API proxy. See [setup](../README.md) and [API contracts](BACKEND_REFERENCE.md).
 
 ## UI and errors
+
+Light/dark rendering uses Tailwind 4's explicit class-based dark variant and theme-specific variables in `src/index.css`, following the saved choice rather than OS preference. Auth uses App's shared header; input labels target IDs; Profile exposes a main landmark; the skip link targets focusable `maincontent`; mobile navigation exposes expanded/controls state. See the [Docker Playwright MCP light/dark review](UI_REVIEW.md) for findings, coverage and limits.
 
 ThemeContext persists light/dark mode through an HTML class. Provider components live in `context/ThemeContext.jsx`, `context/ToastContext.jsx` and `contexts/AuthContext.jsx`; shared context objects/hooks live in their adjacent `theme.js`, `toast.js` and `auth.js` modules so Fast Refresh can track component-only exports. Profile changes refresh the shared auth cache and header immediately. Tailwind supplies responsive layouts, and Header provides mobile navigation. Components use a mix of toasts, alerts, loading indicators and inline errors. Semantic HTML, ARIA labels and keyboard handlers appear in the interface; this reference does not certify accessibility compliance.
 

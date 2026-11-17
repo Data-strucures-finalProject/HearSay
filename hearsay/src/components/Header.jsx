@@ -55,11 +55,13 @@ export default function Header() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-b-2 border-black dark:border-white transition-colors">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <Link to="/" className="hidden md:block text-xl font-bold hover:underline text-black dark:text-white">HearSay</Link>
+        <Link to="/" className="hidden xl:block text-xl font-bold hover:underline text-black dark:text-white">HearSay</Link>
 
         {/* Hide desktop nav on small screens to avoid overlapping mobile controls */}
-        <nav aria-label="Primary navigation" className="hidden md:flex flex-1 mx-8">
-          <ul className="flex justify-center space-x-8">
+        <nav aria-label="Primary navigation" className="hidden xl:flex flex-1 mx-4">
+          <ul className="flex justify-center space-x-4">
+            <li><Link to="/discover" className="hover:underline text-black dark:text-white">Discover</Link></li>
+            <li><Link to="/community" className="hover:underline text-black dark:text-white">Community</Link></li>
             <li><Link to="/recent-reviews" className="hover:underline text-black dark:text-white">Recent Reviews</Link></li>
             <li><Link to="/my-reviews" className="hover:underline text-black dark:text-white">My Reviews</Link></li>
             <li><Link to="/random" className="hover:underline text-black dark:text-white">Random</Link></li>
@@ -68,7 +70,7 @@ export default function Header() {
         </nav>
 
         {/* Desktop controls: hide on small screens so mobile header/menu is reachable */}
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden xl:flex items-center space-x-4">
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme"
@@ -105,7 +107,7 @@ export default function Header() {
         </div>
 
         {/* Mobile Header (visible only on small screens) */}
-        <div className="md:hidden flex items-center w-full">
+        <div className="xl:hidden flex items-center w-full">
           <Link to="/" className="text-xl font-bold text-black dark:text-white hover:underline">
             HearSay
           </Link>
@@ -124,6 +126,9 @@ export default function Header() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="h-10 w-10 border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center"
               aria-label="Toggle menu"
+              id="mobile-menu-button"
+              aria-expanded={mobileMenuOpen}
+              aria-controls="mobile-menu"
             >
               {mobileMenuOpen ? '✕' : '☰'}
             </button>
@@ -137,7 +142,7 @@ export default function Header() {
           id="mobile-menu"
           role="menu"
           aria-labelledby="mobile-menu-button"
-          className="md:hidden fixed top-16 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t-2 border-black dark:border-white p-4 shadow-lg"
+          className="xl:hidden fixed top-16 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t-2 border-black dark:border-white p-4 shadow-lg"
         >
           <form onSubmit={handleSearch} className="w-full mb-3" role="search" aria-label="Mobile site search">
             <input
@@ -152,6 +157,8 @@ export default function Header() {
 
           <nav role="navigation" aria-label="Mobile primary">
             <ul className="space-y-3">
+              <li><Link to="/discover" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Discover</Link></li>
+              <li><Link to="/community" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Community</Link></li>
               {me.authenticated && me.user?.role === 'admin' && <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Admin</Link></li>}
               <li>
                 <Link

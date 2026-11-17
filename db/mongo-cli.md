@@ -18,6 +18,8 @@ npm run db:apply-schemas
 
 These commands create/update validators; they do not seed sample data or create reporting views. `create-*.js` files are separate manual MongoDB shell/GUI scripts and are not the automatic initializer. Their validation types differ from the JSON source, so choose one schema source deliberately.
 
+Backend startup separately installs all ten reporting views in the configured application database. To reconcile them explicitly, run `docker compose exec backend npm run db:apply-views`, or `npm run db:apply-views` from `hearsay` for native development. This uses create-view/`collMod` permissions, updates existing views in place and refuses collection collisions. It does not change source documents or seed data. See [analytical views](../docs/ANALYTICAL_VIEWS.md).
+
 Validation is moderate: new inserts and updates to already-valid documents are checked; existing invalid documents may remain invalid on update. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
 
 ## Prerequisites
