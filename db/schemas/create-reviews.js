@@ -13,6 +13,10 @@ db.createCollection("reviews", {
         createdAt: { bsonType: ["date", "string"] },
         updatedAt: { bsonType: ["date", "string"] },
         text: { bsonType: "string" },
+        trackRatings: {
+          bsonType: "object",
+          additionalProperties: { bsonType: ["int", "long", "double", "decimal"], minimum: 0.5, maximum: 5, multipleOf: 0.5 }
+        },
         title: { bsonType: "string" },
         type: { bsonType: "string" },
         likes: { bsonType: ["int", "long"] },

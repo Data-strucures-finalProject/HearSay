@@ -26,7 +26,7 @@ export default function ReviewPage() {
         } else {
           setError(data.error || 'Failed to load review');
         }
-      } catch (e) {
+      } catch {
         setError('Failed to load review');
       } finally {
         setLoading(false);
@@ -87,12 +87,17 @@ export default function ReviewPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok && data.review) {
-        setReview(data.review);
+        setReview(current => ({
+          ...current,
+          rating: data.review.rating,
+          text: data.review.text,
+          updatedAt: data.review.updatedAt,
+        }));
         setEditMode(false);
       } else {
         setSaveError(data.error || 'Failed to save');
       }
-    } catch (e) {
+    } catch {
       setSaveError('Failed to save');
     } finally {
       setSaving(false);

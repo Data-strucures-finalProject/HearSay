@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
-import { useToast } from '../context/ToastContext';
+import { useParams } from 'react-router-dom';
+import { useTheme } from '../context/theme';
+import { useToast } from '../context/toast';
 import HeadphoneRating from './HeadphoneRating';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 
@@ -10,7 +10,6 @@ const SONG_REVIEW_WORD_LIMIT = 1000;
 export default function SongRatingPage() {
   const { songId } = useParams();
   const { theme } = useTheme();
-  const navigate = useNavigate();
   const { success } = useToast?.() || { success: () => {} };
 
   const [song, setSong] = useState(null); // basic display info

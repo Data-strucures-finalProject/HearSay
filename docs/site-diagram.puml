@@ -6,6 +6,7 @@ package "React SPA (hearsay/src)" {
   component "App / Header\nRouter + theme/toast/auth providers" as App
   component "Public pages\nLanding, Search, Random\nArtist, Album, Song\nRecent Reviews, Review details" as Public
   component "Protected pages\nProfile, My Reviews" as Protected
+  component "Admin overview\nServer-verified admin role" as Admin
   component "AuthPage / AuthCallback\nLocal auth + Google PKCE" as Auth
 }
 component "Vite dev proxy :5173\nor frontend Nginx :8080" as Proxy
@@ -20,15 +21,22 @@ component "schema-HearSay-*.json\napply-schemas.mjs" as Schemas
 User --> App
 App --> Public
 App --> Protected
+App --> Admin
 App --> Auth
 Public --> Proxy : fetch /api
 Protected --> Proxy : cookie-authenticated fetch
+Admin --> Proxy : admin-only fetch
 Auth --> Proxy : local login and code exchange
 Auth --> Google : PKCE authorization redirect
 Proxy --> API
 API --> DBAPI
 DBAPI --> Data
 API --> Sessions
+note right of API
+ One-time default admin bootstrap.
+ Profile supports CSV/PDF export and
+ confirmed account/owned-data deletion.
+end note
 API --> SpotifyAPI
 SpotifyAPI --> Spotify
 API --> Google : code exchange + userinfo
