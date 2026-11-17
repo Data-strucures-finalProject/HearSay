@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, requiredRole }) {
   const location = useLocation();
   const [state, setState] = useState({ loading: true, authenticated: false });
 
@@ -14,18 +14,18 @@ export default function ProtectedRoute({ children }) {
         try {
           const u = localStorage.getItem('hs_user');
           if (u) cachedAuth = true;
-        } catch {}
-        if (!cancelled && cachedAuth) setState({ loading: false, authenticated: true });
+        } catch { /* Storage is optional; authorization remains server-side. */ }
+        if (!cancelled && cachedAuth && !requiredRole) setState({ loading: false, authenticated: true });
 
         const res = await fetch('/api/me', { credentials: 'include' });
         const data = await res.json().catch(() => ({ authenticated: false }));
-        if (!cancelled) setState({ loading: false, authenticated: !!data.authenticated });
+        if (!cancelled) setState({ loading: false, authenticated: !!data.authenticated, role: data.user?.role });
       } catch {
         if (!cancelled) setState({ loading: false, authenticated: false });
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [requiredRole]);
 
   if (state.loading) {
     return null; // or a small loader if desired
@@ -35,5 +35,6 @@ export default function ProtectedRoute({ children }) {
     return <Navigate to="/auth" replace state={{ from: location }} />;
   }
 
+  if (requiredRole && state.role !== requiredRole) return <Navigate to="/" replace />;
   return children;
 }

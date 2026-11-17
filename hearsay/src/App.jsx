@@ -15,6 +15,7 @@ import RandomPage from './components/RandomPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import RecentReviewsPage from './components/RecentReviewsPage';
 import ReviewPage from './components/ReviewPage';
+import AdminPage from './components/AdminPage';
 import './App.css';
 
 function App() {
@@ -37,6 +38,7 @@ function App() {
                 <Route path="/recent-reviews" element={<RecentReviewsPage />} />
                 <Route path="/review/:reviewId" element={<ReviewPage />} />
                 <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
                 <Route path="/random" element={<RandomPage />} />
               </Routes>
             </div>

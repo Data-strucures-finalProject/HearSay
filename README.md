@@ -32,7 +32,13 @@ Open http://localhost:8080. The backend is exposed on port 5174. Frontend Nginx 
 
 The backend applies validators before starting. Sample-data import is a separate operation. Data persists in `db/data`. `docker compose down` stops containers without deleting that directory.
 
-Frontend configuration is embedded at build time. The Dockerfile forwards the Google client ID and redirect URI build arguments. AuthPage's default API base is `http://localhost:5174/api`; see the frontend reference for configuration used by each API client.
+Frontend configuration is embedded at build time. The Dockerfile forwards the Google client ID and redirect URI build arguments. AuthPage and review clients default to same-origin `/api`; see the frontend reference for optional overrides.
+
+Profile supports local passwords, Google linking, independent choices to copy Google names/email, and saved login email management. Removing the Google email also disconnects Google sign-in. Startup applies MongoDB validators and initializes legacy email aliases; active aliases have a unique index. See the backend reference for fields and routes.
+
+Profile also offers CSV and PDF downloads of account details, reviews and ratings, plus permanent account deletion with an explicit confirmation. Exports exclude credentials. Deletion removes owned data and sessions while preserving shared music metadata and other users' data.
+
+Set `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `.env` to initialize the default admin once (defaults: `admin@hearsay.com` / `password`). Existing default-admin credentials are never reset on restart. Use a stronger initial password before public deployment. Only administrators see the Admin tab; the backend also enforces the admin role on its API.
 
 ## Native development
 
@@ -65,4 +71,4 @@ npm run lint
 
 Build output is `dist/`. `npm run preview` has no configured API proxy and is not the complete deployment. `npm run start:backend` uses production mode; supply `.env.production` or process variables and serve the frontend behind an `/api` proxy.
 
-There is no npm test script. The optional scripts in `docs/audit-*.mjs` support developer verification; their runtime requirements are described in their file headers.
+Optional developer tests live in [scripts/tests](scripts/tests/README.md). Run `.\scripts\tests\run.cmd --setup` from PowerShell or Command Prompt to install temporary Docker test tools and run everything. Select individual suites with `run.cmd runtime`, `run.cmd browser` or `run.cmd admin` from that folder.

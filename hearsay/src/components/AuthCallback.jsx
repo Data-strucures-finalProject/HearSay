@@ -1,89 +1,58 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { emitAuthChange } from '../utils/authBus';
+import { GOOGLE_AUTH_FLOW_KEY } from '../utils/googleAuth';
 
-// Helper to decode JWT payload (unsafe; only used to extract basic profile claims)
-function parseJwt (token) {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
-      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    return null;
-  }
-}
+const errors = {
+  google_account_in_use: 'This Google account is already linked to another HearSay account. Your account has not changed.',
+  google_already_linked: 'Your HearSay account already has a different Google account linked.',
+  invalid_google_auth_state: 'Google authorization expired or could not be verified. Please try again.',
+  google_link_session_changed: 'Your login changed during authorization. Please start linking again from Profile.',
+  unauthorized: 'Please sign in again before linking Google.',
+  unverified_google_email: 'Google could not verify this email address.',
+};
 
 export default function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState(null);
+  const started = useRef(false);
 
   useEffect(() => {
+    // StrictMode must not exchange the same one-time authorization code twice.
+    if (started.current) return;
+    started.current = true;
     (async () => {
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get('code');
-      if (!code) {
-        setError('No code returned from Google');
-        return;
-      }
-
-      let code_verifier = null;
+      let flow;
       try {
-        code_verifier = localStorage.getItem('google_pkce_verifier') || sessionStorage.getItem('google_pkce_verifier');
-      } catch (e) {
-        code_verifier = sessionStorage.getItem('google_pkce_verifier');
-      }
-      if (!code_verifier) {
-        console.error('Missing PKCE verifier in storage.');
-        setError('Missing PKCE verifier. Make sure you completed the login in the same tab.');
-        return;
-      }
-
-      try {
-        const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
-        const proxyRes = await fetch(`/api/auth/google/exchange`, {
-          method: 'POST',
+        flow = JSON.parse(sessionStorage.getItem(GOOGLE_AUTH_FLOW_KEY) || 'null');
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('error')) throw new Error('Google authorization was cancelled or denied.');
+        const code = params.get('code');
+        const state = params.get('state');
+        if (!code || !flow?.verifier || !state || state !== flow.state) {
+          throw new Error(errors.invalid_google_auth_state);
+        }
+        const response = await fetch('/api/auth/google/exchange', {
+          method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ code, redirect_uri: redirectUri, code_verifier }),
+          body: JSON.stringify({
+            code, state, code_verifier: flow.verifier,
+            redirect_uri: import.meta.env.VITE_GOOGLE_REDIRECT_URI || window.location.origin + '/auth/callback',
+          }),
         });
-
-        if (!proxyRes.ok) {
-          const errText = await proxyRes.text().catch(() => null);
-          console.error('Proxy exchange failed:', proxyRes.status, errText);
-          throw new Error(`Token exchange failed: ${proxyRes.status} ${errText || ''}`);
-        }
-
-        await proxyRes.json();
-
-        // Clean up verifier
-        try {
-          localStorage.removeItem('google_pkce_verifier');
-        } catch {
-          sessionStorage.removeItem('google_pkce_verifier');
-        }
-
-        // Fetch fresh session state from server to ensure auth is reflected
-        const meRes = await fetch('/api/me', { credentials: 'include' });
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          if (meData.authenticated) {
-            // Cache user for UI convenience
-            try {
-              localStorage.setItem('hs_user', JSON.stringify(meData.user));
-            } catch {}
-            // Notify app of auth state change
-            emitAuthChange({ authenticated: true, user: meData.user });
-          }
-        }
-
-        // Redirect home
-        navigate('/');
-      } catch (e) {
-        console.error(e);
-        setError(e.message || String(e));
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) throw new Error(errors[data.error] || 'Google authorization failed. Please try again.');
+        try { localStorage.setItem('hs_user', JSON.stringify(data.user)); } catch { /* Optional UI cache. */ }
+        emitAuthChange({ authenticated: true, user: data.user });
+        navigate(flow.intent === 'link' ? '/profile' : '/', {
+          replace: true, state: flow.intent === 'link' ? { googleLinkSuccess: true, reviewGoogleProfile: true } : null,
+        });
+      } catch (failure) {
+        const message = failure.message || 'Google authorization failed. Please try again.';
+        if (flow?.intent === 'link') navigate('/profile', { replace: true, state: { googleLinkError: message } });
+        else setError(message);
+      } finally {
+        try { sessionStorage.removeItem(GOOGLE_AUTH_FLOW_KEY); } catch { /* Storage may be unavailable. */ }
       }
     })();
   }, [navigate]);
@@ -91,11 +60,7 @@ export default function AuthCallback() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="p-6">
-        {error ? (
-          <div className="text-red-600">Authentication error: {error}</div>
-        ) : (
-          <div>Signing in with Google…</div>
-        )}
+        {error ? <div role="alert" className="text-red-600">Authentication error: {error}</div> : <div>Completing Google authorization…</div>}
       </div>
     </div>
   );

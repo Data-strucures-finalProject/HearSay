@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSpotifyNewReleases, searchSpotify } from '../config/spotify';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/theme';
 
 export default function RandomPage() {
   const [randomItem, setRandomItem] = useState(null);
@@ -15,9 +15,9 @@ export default function RandomPage() {
   // Scroll to results when randomItem changes
   useEffect(() => {
     if (randomItem && resultsRef.current) {
-      resultsRef.current.scrollIntoView({ 
-        behavior: 'smooth', 
-        block: 'center' 
+      resultsRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
       });
     }
   }, [randomItem]);
@@ -32,25 +32,25 @@ export default function RandomPage() {
         const randomCountry = countries[Math.floor(Math.random() * countries.length)];
         // Spotify allows up to offset 1000, so we can access many more albums
         const randomOffset = Math.floor(Math.random() * 950); // Keep under 1000 limit
-        
-        const response = await getSpotifyNewReleases({ 
-          country: randomCountry, 
+
+        const response = await getSpotifyNewReleases({
+          country: randomCountry,
           limit: 50, // Max limit per request
-          offset: randomOffset 
+          offset: randomOffset
         });
         const items = response.albums?.items || [];
         const multiTrackAlbums = items.filter(a => a.total_tracks > 1);
-        
+
         if (multiTrackAlbums.length === 0) {
           setError('No multi-track albums found. Please try again.');
           setLoading(false);
           return;
         }
-        
+
         // Use crypto.getRandomValues for better randomness
         const randomIndex = crypto.getRandomValues(new Uint32Array(1))[0] % multiTrackAlbums.length;
         const randomAlbum = multiTrackAlbums[randomIndex];
-        
+
         setRandomItem({
           id: randomAlbum.id,
           title: randomAlbum.name,
@@ -67,7 +67,7 @@ export default function RandomPage() {
         setLoading(true);
         setError(null);
         setItemType('song');
-        
+
         // Vary search patterns for more randomness
         const searchPatterns = [
           () => {
@@ -86,7 +86,7 @@ export default function RandomPage() {
           },
           () => 'year:' + (1960 + Math.floor(Math.random() * 65))
         ];
-        
+
         let track = null;
         let attempts = 0;
         const maxAttempts = 10;
@@ -128,7 +128,7 @@ export default function RandomPage() {
         } else {
           setError('Unable to find a random song. Please try again.');
         }
-      }      
+      }
       setItemType(type);
     } catch (error) {
       console.error('Error fetching random music:', error);
@@ -145,14 +145,14 @@ export default function RandomPage() {
           <span className="text-black dark:text-white">Random!</span>
         </h1>
         <div className="flex flex-wrap gap-4">
-          <button 
+          <button
             className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-6 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
             onClick={() => fetchRandomMusic('song')}
             disabled={loading}
           >
             {loading && itemType === 'song' ? 'Loading...' : 'Random Song'}
           </button>
-          <button 
+          <button
             className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-6 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
             onClick={() => fetchRandomMusic('album')}
             disabled={loading}
@@ -167,16 +167,16 @@ export default function RandomPage() {
           {error}
         </div>
       )}
-      
+
       {randomItem && (
         <div className="max-w-5xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Left: Cover Art */}
             <div className="border-2 border-black dark:border-white flex items-start">
               {randomItem.coverArt ? (
-                <img 
-                  src={randomItem.coverArt} 
-                  alt={randomItem.title} 
+                <img
+                  src={randomItem.coverArt}
+                  alt={randomItem.title}
                   className="w-full h-auto object-contain"
                 />
               ) : (
@@ -231,13 +231,13 @@ export default function RandomPage() {
 
               {/* Buttons */}
               <div className="space-y-3">
-                <button 
+                <button
                   className="w-full border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   onClick={() => navigate(itemType === 'album' ? `/album/${randomItem.id}` : `/song/${randomItem.id}`)}
                 >
                   Rate This {itemType === 'album' ? 'Album' : 'Song'}
                 </button>
-                
+
                 <a
                   href={randomItem.spotifyUrl}
                   target="_blank"

@@ -46,7 +46,7 @@ export default function ProfilePage() {
   try {
     const u = localStorage.getItem('hs_user');
     if (u) cachedUserPicture = JSON.parse(u)?.picture;
-  } catch {}
+  } catch { /* Keep the current view when optional enrichment is unavailable. */ }
   const pictureSrc = p.picture || cachedUserPicture;
 
   return (

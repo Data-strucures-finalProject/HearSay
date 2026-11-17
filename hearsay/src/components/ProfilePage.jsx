@@ -1,32 +1,18 @@
 import { useEffect, useState } from 'react';
 import Avatar from './Avatar';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { emitAuthChange } from '../utils/authBus';
-
-// Google PKCE helpers (duplicated; consider refactoring to shared util later)
-function base64urlencode(a) {
-  return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-async function sha256(plain) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
-  return await crypto.subtle.digest('SHA-256', data);
-}
-function randomString(length = 64) {
-  const array = new Uint8Array(length);
-  crypto.getRandomValues(array);
-  return base64urlencode(array);
-}
-async function createCodeChallenge(verifier) {
-  const hashed = await sha256(verifier);
-  return base64urlencode(hashed);
-}
+import { startGoogleAuth } from '../utils/googleAuth';
+import GoogleProfileChoices from './GoogleProfileChoices';
+import AccountEmails from './AccountEmails';
+import AccountDataActions from './AccountDataActions';
 
 export default function ProfilePage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [reviewGoogleDetails, setReviewGoogleDetails] = useState(Boolean(location.state?.reviewGoogleProfile || location.state?.googleLinkSuccess));
+  const [googleLinkError, setGoogleLinkError] = useState(location.state?.googleLinkError || null);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
   const [state, setState] = useState({ loading: true, error: null, profile: null });
   const [edit, setEdit] = useState({ firstname: '', lastname: '' });
   const [saving, setSaving] = useState(false);
@@ -72,7 +58,7 @@ export default function ProfilePage() {
     } catch (e) {
       console.warn('Logout request failed', e);
     } finally {
-      try { localStorage.removeItem('hs_user'); } catch {}
+      try { localStorage.removeItem('hs_user'); } catch { /* Storage is optional; authorization remains server-side. */ }
       emitAuthChange({ authenticated: false });
       setLogoutLoading(false);
       navigate('/');
@@ -96,13 +82,20 @@ export default function ProfilePage() {
   }
 
   const p = state.profile || {};
+  const googleConnected = (p.accounts || []).some(account => account.kind === 'Google');
   const displayName = [p.firstname, p.lastname].filter(Boolean).join(' ') || p.name || p.email || 'Your Profile';
   let cachedUserPicture;
   try {
     const u = localStorage.getItem('hs_user');
     if (u) cachedUserPicture = JSON.parse(u)?.picture;
-  } catch {}
+  } catch { /* Storage is optional; authorization remains server-side. */ }
   const pictureSrc = p.picture || cachedUserPicture;
+  const applyAccountUpdate = data => {
+    setState(current => ({ ...current, profile: data.profile }));
+    setEdit({ firstname: data.profile.firstname || '', lastname: data.profile.lastname || '' });
+    try { localStorage.setItem('hs_user', JSON.stringify(data.user)); } catch { /* Optional UI cache. */ }
+    emitAuthChange({ authenticated: true, user: data.user });
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -115,6 +108,7 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {googleConnected && reviewGoogleDetails && p.googleProfile && <GoogleProfileChoices profile={p} onUpdated={applyAccountUpdate} onClose={() => setReviewGoogleDetails(false)} />}
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="border-2 border-black dark:border-white p-4">
             <h2 className="font-semibold text-black dark:text-white mb-2"><span className="text-black dark:text-white">Basic Info</span></h2>
@@ -159,11 +153,11 @@ export default function ProfilePage() {
                     if (!resp.ok || !data.ok) {
                       setSaveError(data.error || 'Update failed');
                     } else {
-                      setState(s => ({ ...s, profile: data.profile }));
+                      applyAccountUpdate(data);
                       setSaveSuccess(true);
                       setIsEditing(false);
                     }
-                  } catch (err) {
+                  } catch {
                     setSaveError('Network error');
                   } finally {
                     setSaving(false);
@@ -232,31 +226,32 @@ export default function ProfilePage() {
                 <li className="text-gray-600 dark:text-gray-400">None</li>
               )}
             </ul>
+            {googleLinkError && <p role="alert" className="mt-4 text-red-600">{googleLinkError}</p>}
+            {location.state?.googleLinkSuccess && (p.accounts || []).some(a => a.kind === 'Google') && <p role="status" className="mt-4 text-green-600">Google account linked.</p>}
+            {googleConnected && <div className="mt-4 text-black dark:text-white">
+              <p className="text-sm mb-2">Copy your Google first name, last name or email into your profile. You choose which details to replace.</p>
+              <button type="button" disabled={linkingGoogle} aria-expanded={reviewGoogleDetails && Boolean(p.googleProfile)} aria-controls="google-profile-choices" className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" onClick={async () => {
+              if (p.googleProfile) { setReviewGoogleDetails(true); return; }
+              setLinkingGoogle(true); setGoogleLinkError(null);
+              try { await startGoogleAuth('link'); } catch (failure) { setGoogleLinkError(failure.message); setLinkingGoogle(false); }
+            }}>{linkingGoogle ? 'Opening Google...' : 'Use Google profile details'}</button>
+            </div>}
             {!(p.accounts || []).some(a => a.kind === 'Google') && (
               <button
+                disabled={linkingGoogle}
                 onClick={async () => {
-                  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-                  const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
-                  if (!clientId) { alert('Missing VITE_GOOGLE_CLIENT_ID'); return; }
-                  const verifier = randomString(64);
-                  const challenge = await createCodeChallenge(verifier);
-                  try { localStorage.setItem('google_pkce_verifier', verifier); } catch { sessionStorage.setItem('google_pkce_verifier', verifier); }
-                  const params = new URLSearchParams({
-                    client_id: clientId,
-                    redirect_uri: redirectUri,
-                    response_type: 'code',
-                    scope: 'openid profile email',
-                    access_type: 'offline',
-                    include_granted_scopes: 'true',
-                    code_challenge: challenge,
-                    code_challenge_method: 'S256',
-                    prompt: 'select_account'
-                  });
-                  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+                  setGoogleLinkError(null);
+                  setLinkingGoogle(true);
+                  try {
+                    await startGoogleAuth('link');
+                  } catch (error) {
+                    setGoogleLinkError(error.message || 'Unable to link Google. Please try again.');
+                    setLinkingGoogle(false);
+                  }
                 }}
                 className="mt-4 border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
-                Link Google Account
+                {linkingGoogle ? 'Opening Google...' : 'Link Google Account'}
               </button>
             )}
             {!(p.accounts || []).some(a => a.kind === 'Local') && (
@@ -294,7 +289,7 @@ export default function ProfilePage() {
                           setLocalLinkSuccess(true);
                           setLinkingLocal(false);
                         }
-                      } catch (err) {
+                      } catch {
                         setLocalLinkError('Network error');
                       } finally {
                         setLocalLinkLoading(false);
@@ -346,6 +341,12 @@ export default function ProfilePage() {
             )}
           </div>
         </div>
+        <AccountEmails profile={p} onUpdated={applyAccountUpdate} />
+        <AccountDataActions onDeleted={() => {
+          try { localStorage.removeItem('hs_user'); } catch { /* Optional UI cache. */ }
+          emitAuthChange({ authenticated: false });
+          navigate('/auth', { replace: true });
+        }} />
       </div>
     </div>
   );

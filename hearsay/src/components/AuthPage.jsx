@@ -1,35 +1,8 @@
 import { useState } from 'react';
-import { useTheme } from '../context/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import Header from './Header';
-
-// PKCE helpers
-function base64urlencode(a) {
-  // Convert the ArrayBuffer to string using Uint8 array.
-  // btoa takes chars from 0-255 and base64 encodes.
-  return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-async function sha256(plain) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
-  return await crypto.subtle.digest('SHA-256', data);
-}
-
-function randomString(length = 64) {
-  const array = new Uint8Array(length);
-  crypto.getRandomValues(array);
-  // convert to base64url
-  return base64urlencode(array);
-}
-
-async function createCodeChallenge(verifier) {
-  const hashed = await sha256(verifier);
-  return base64urlencode(hashed);
-}
+import { emitAuthChange } from '../utils/authBus';
+import { startGoogleAuth } from '../utils/googleAuth';
 
 export default function AuthPage() {
   const [mode, setMode] = useState('login'); // 'login' or 'signup'
@@ -39,11 +12,8 @@ export default function AuthPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { theme, toggle } = useTheme();
-
-  // Central API base: allow explicit port override via env; fallback to backend port
-  // Example: VITE_API_BASE=http://localhost:5174/api  (or relative '/api' to use proxy)
-  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5174/api';
+  // Use the same-origin Vite/Nginx proxy unless an explicit API base is supplied.
+  const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '');
 
   const validateEmail = (e) => /\S+@\S+\.\S+/.test(e);
 
@@ -83,62 +53,37 @@ export default function AuthPage() {
         return;
       }
       // Success: server session established; navigate home
+      emitAuthChange({ authenticated: true, user: data.user });
       navigate('/');
-    } catch (e) {
+    } catch {
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGoogleSSO = () => {
-    // Client-side PKCE flow: generate code_verifier & code_challenge, store verifier
-    (async () => {
-      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-      const redirectUri = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
-      if (!clientId) {
-        alert('Missing VITE_GOOGLE_CLIENT_ID in environment');
-        return;
-      }
-
-      const code_verifier = randomString(64);
-      const code_challenge = await createCodeChallenge(code_verifier);
-      // Store verifier in localStorage so it survives redirects/tab behavior in development
-      // (sessionStorage can be lost if the redirect opens a new tab or origin changes).
-      try {
-        localStorage.setItem('google_pkce_verifier', code_verifier);
-      } catch (e) {
-        // fallback to sessionStorage if localStorage isn't available
-        sessionStorage.setItem('google_pkce_verifier', code_verifier);
-      }
-
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        scope: 'openid profile email',
-        access_type: 'offline',
-        include_granted_scopes: 'true',
-        code_challenge: code_challenge,
-        code_challenge_method: 'S256',
-        prompt: 'select_account',
-      });
-
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-    })();
+  const handleGoogleSSO = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      await startGoogleAuth('signin');
+    } catch (error) {
+      setError(error.message || 'Unable to start Google sign-in.');
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 pt-16">
       <Header />
-      
+
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-md mx-auto">
           <div className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 p-6">
             <h1 className="text-2xl font-bold mb-6">
               <span className="text-black dark:text-white">{mode === 'login' ? 'Login' : 'Register'}</span>
             </h1>
-            
+
             {error && (
               <div className="mb-4 p-3 border border-red-500 text-red-600">{error}</div>
             )}
@@ -165,7 +110,7 @@ export default function AuthPage() {
                 <span className="px-2 bg-white dark:bg-gray-900 text-black dark:text-white">Or</span>
               </div>
             </div>
-            
+
             <form onSubmit={handleLocalSubmit} className="space-y-4">
               <div>
                 <label className="block mb-2 text-black dark:text-white">Email</label>
@@ -178,7 +123,7 @@ export default function AuthPage() {
                   required
                 />
               </div>
-              
+
               <div>
                 <label className="block mb-2 text-black dark:text-white">Password</label>
                 <input
@@ -190,7 +135,7 @@ export default function AuthPage() {
                   required
                 />
               </div>
-              
+
               {mode === 'signup' && (
                 <div>
                   <label className="block mb-2 text-black dark:text-white">Confirm Password</label>
@@ -204,7 +149,7 @@ export default function AuthPage() {
                   />
                 </div>
               )}
-              
+
               <button
                 type="submit"
                 className="w-full border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -213,7 +158,7 @@ export default function AuthPage() {
                 {loading ? 'Please wait...' : mode === 'login' ? 'Login' : 'Register'}
               </button>
             </form>
-            
+
             <div className="mt-4 text-center">
               <button
                 onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
