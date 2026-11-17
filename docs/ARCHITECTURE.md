@@ -27,6 +27,10 @@ flowchart LR
     Guest --> Auth[Local login/register or Google]
     Auth --> Session[Server session]
     Session --> Profile[Profile and My Reviews]
+    Profile --> Export[Own account CSV/PDF downloads]
+    Profile --> Delete[Confirmed account and owned-data deletion]
+    Session --> Role{Database role check}
+    Role --> Admin[Admin-only overview]
     Session --> Write[Own review create/update/delete]
     Album[Album track submission] --> Songs[Save each rated song review]
     Songs --> Average[Average rated tracks]
@@ -36,6 +40,12 @@ flowchart LR
 At least one track is required. Song records are saved separately. Writes are sequential
 and not transactional. Guests on protected routes redirect to auth; guests
 submitting on public media pages are rejected by the API and usually see alerts.
+
+Startup seeds the configured default administrator only when no default admin exists.
+The Admin page and its API require the persisted admin role; cached client state cannot
+authorize access. Account exports exclude credentials. Account deletion removes owned
+reviews, references and sessions while retaining shared music metadata; a durable marker
+allows retrying incomplete cleanup on the standalone MongoDB deployment.
 
 ## Historical rendered diagrams
 

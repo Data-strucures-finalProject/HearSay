@@ -18,6 +18,9 @@ import { ObjectId, Int32 } from 'mongodb';
 import crypto from 'node:crypto';
 import * as db from './dbAPI.js';
 import * as spotify from './spotifyAPI.js';
+import { emailOwnerFilter, initializeUserEmails, mountEmailRoutes, publicProfile, userProjection } from './userEmails.js';
+import { mountAccountData } from './accountData.js';
+import { initializeDefaultAdmin, mountAdminRoutes } from './admin.js';
 
 // Load .env in development so server can read GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 dotenv.config();
@@ -136,8 +139,10 @@ await db.connectMongo().catch((err) => {
   process.exit(1);
 });
 
-// Try to ensure user uniqueness constraints; if this fails due to existing duplicates,
-// we'll log a helpful message but won't crash the server.
+// Email alias uniqueness must be established before accepting authentication.
+await initializeUserEmails(db.getDb());
+await initializeDefaultAdmin(db.getDb());
+// Other legacy index failures are reported without stopping startup.
 try {
   await db.ensureUserIndexes();
   await db.ensureReviewIndexes();
@@ -172,6 +177,9 @@ app.use(
   })
 );
 
+mountAccountData(app, db.getDb(), { sessionName: SESSION_NAME, sessionsCollection: SESSIONS_COLLECTION });
+mountAdminRoutes(app, db.getDb());
+
 // Rotate session id every SESSION_ROTATE_MS to mitigate fixation
 app.use((req, res, next) => {
   // rotate session using coerced numeric value
@@ -200,7 +208,7 @@ app.use((req, res, next) => {
       // Shallow clone and mask password-like fields
       const clone = { ...req.body };
       for (const k of Object.keys(clone)) {
-        if (/password|pwd|secret|token/i.test(k)) {
+        if (/password|pwd|secret|token|verifier|authorization|^code$|^state$/i.test(k)) {
           // Preserve length info without exposing value
           const v = typeof clone[k] === 'string' ? clone[k] : '';
           clone[k] = v ? `***masked(len=${v.length})***` : '***masked***';
@@ -209,7 +217,7 @@ app.use((req, res, next) => {
       safeBody = JSON.stringify(clone).slice(0, 300); // longer slice since we masked sensitive values
     }
     console.log('[SERVER] Incoming', req.method, req.originalUrl, safeBody ? `body=${safeBody}` : '');
-  } catch (e) {
+  } catch {
     console.log('[SERVER] Incoming', req.method, req.originalUrl);
   }
   next();
@@ -217,6 +225,7 @@ app.use((req, res, next) => {
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+mountEmailRoutes(app, db.getDb());
 
 // ---------------- Local Auth (Email + Password) ----------------
 // Helper: normalize email
@@ -231,7 +240,7 @@ function validatePassword(pw) {
   return trimmed.length >= 6;
 }
 
-// Signup or link local password (if Google-only user adds a password)
+// Public signup never links credentials to an existing account.
 app.post('/api/auth/local/signup', async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -240,13 +249,17 @@ app.post('/api/auth/local/signup', async (req, res) => {
     if (!validatePassword(password)) return res.status(400).json({ ok: false, error: 'weak_password', minLength: 6 });
 
     const usersCol = db.Users.collection();
-    const existing = await usersCol.findOne({ email: em });
+    const existing = await usersCol.findOne(emailOwnerFilter(em));
+    if (existing) return res.status(409).json({ ok: false, error: 'email_in_use' });
     const hash = await bcrypt.hash(String(password), BCRYPT_ROUNDS);
     const nowIso = new Date().toISOString();
 
     if (!existing) {
       const newDoc = {
+        role: 'user',
         email: em,
+        loginEmails: [em],
+        emailHistory: [em],
         passwordHash: hash,
         firstname: '',
         lastname: '',
@@ -256,9 +269,11 @@ app.post('/api/auth/local/signup', async (req, res) => {
       };
       const ins = await usersCol.insertOne(newDoc);
       const userDoc = { ...newDoc, _id: ins.insertedId };
+      await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
       req.session.user = {
         oid: userDoc._id.toString(),
         provider: 'local',
+        role: 'user',
         email: userDoc.email,
         firstname: userDoc.firstname,
         lastname: userDoc.lastname,
@@ -267,29 +282,8 @@ app.post('/api/auth/local/signup', async (req, res) => {
       return res.json({ ok: true, user: req.session.user, linked: false, created: true });
     }
 
-    // Existing user: if already has local password, block; else link
-    if (existing.passwordHash) {
-      return res.status(409).json({ ok: false, error: 'email_in_use' });
-    }
-
-    await usersCol.updateOne(
-      { _id: existing._id },
-      {
-        $set: { passwordHash: hash, updatedAt: nowIso },
-        $addToSet: { accounts: { kind: 'Local', uid: em } },
-      }
-    );
-    const linkedDoc = await usersCol.findOne({ _id: existing._id });
-    req.session.user = {
-      oid: linkedDoc._id.toString(),
-      provider: 'local',
-      email: linkedDoc.email,
-      firstname: linkedDoc.firstname || '',
-      lastname: linkedDoc.lastname || '',
-    };
-    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
-    return res.json({ ok: true, user: req.session.user, linked: true, created: false });
   } catch (e) {
+    if (e?.code === 11000) return res.status(409).json({ ok: false, error: 'email_in_use' });
     console.error('[AuthLocal] signup error', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
@@ -302,13 +296,15 @@ app.post('/api/auth/local/login', async (req, res) => {
     const em = normalizeEmail(email);
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
     const usersCol = db.Users.collection();
-    const user = await usersCol.findOne({ email: em });
+    const user = await usersCol.findOne(emailOwnerFilter(em));
     if (!user || !user.passwordHash) return res.status(404).json({ ok: false, error: 'no_local_account' });
     const match = await bcrypt.compare(String(password || ''), user.passwordHash);
     if (!match) return res.status(401).json({ ok: false, error: 'invalid_credentials' });
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
     req.session.user = {
       oid: user._id.toString(),
       provider: 'local',
+      role: user.role === 'admin' ? 'admin' : 'user',
       email: user.email,
       firstname: user.firstname || '',
       lastname: user.lastname || '',
@@ -348,8 +344,9 @@ app.post('/api/auth/local/set-password', async (req, res) => {
 
 // Debug: list registered routes (helps verify local auth endpoints mounted)
 app.get('/api/debug/routes', (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.sendStatus(404);
   const routes = [];
-  app._router.stack.forEach(layer => {
+  app.router.stack.forEach(layer => {
     if (layer.route) {
       const methods = Object.keys(layer.route.methods).filter(m => layer.route.methods[m]);
       routes.push({ path: layer.route.path, methods });
@@ -370,12 +367,39 @@ app.get('/api/session', (req, res) => {
   });
 });
 
+// Bind each Google round trip to its intent, PKCE challenge and initiating session.
+app.post('/api/auth/google/start', async (req, res) => {
+  const { intent, code_challenge } = req.body || {};
+  if (!['signin', 'link'].includes(intent) || typeof code_challenge !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(code_challenge)) {
+    return res.status(400).json({ ok: false, error: 'invalid_google_auth_request' });
+  }
+  if (intent === 'link' && !req.session?.user?.oid) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  req.session.googleAuth = {
+    state: crypto.randomBytes(32).toString('hex'), intent, codeChallenge: code_challenge,
+    userOid: intent === 'link' ? req.session.user.oid : null,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  };
+  await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
+  return res.json({ ok: true, state: req.session.googleAuth.state });
+});
+
 app.post('/api/auth/google/exchange', async (req, res) => {
   try {
-    const { code, redirect_uri, code_verifier } = req.body;
-    if (!code || !redirect_uri || !code_verifier) {
+    const { code, redirect_uri, code_verifier, state } = req.body || {};
+    if (![code, redirect_uri, code_verifier].every(value => typeof value === 'string' && value)) {
       return res.status(400).json({ error: 'missing_parameters' });
     }
+    const pending = req.session?.googleAuth;
+    if (!pending || typeof state !== 'string' || state !== pending.state || pending.expiresAt <= Date.now() ||
+      crypto.createHash('sha256').update(code_verifier).digest('base64url') !== pending.codeChallenge) {
+      return res.status(400).json({ ok: false, error: 'invalid_google_auth_state' });
+    }
+    if (pending.intent === 'link' && (!req.session.user?.oid || req.session.user.oid !== pending.userOid)) {
+      return res.status(401).json({ ok: false, error: 'google_link_session_changed' });
+    }
+    // Consume the flow even when the provider rejects the code or the identity conflicts.
+    delete req.session.googleAuth;
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
 
     const client_id = GOOGLE_CLIENT_ID;
     const client_secret = GOOGLE_CLIENT_SECRET;
@@ -392,7 +416,7 @@ app.post('/api/auth/google/exchange', async (req, res) => {
       code_verifier,
     });
 
-    // Perform token exchange with Google and log the raw response for debugging
+    // Exchange the code without logging credentials or tokens.
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -403,10 +427,10 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     let data;
     try {
       data = JSON.parse(dataText);
-    } catch (e) {
+    } catch {
       data = dataText;
     }
-    console.log('[SERVER] Google token response', tokenRes.status, typeof data === 'string' ? data.slice(0, 1000) : data);
+    console.log('[SERVER] Google token exchange status', tokenRes.status);
 
     if (!tokenRes.ok) {
       // Forward Google's exact response status and body to the client for easier debugging
@@ -423,6 +447,42 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     } catch (e) {
       console.warn('[SERVER] Failed to fetch Google userinfo', e);
     }
+    if (!profile?.sub || !profile?.email) {
+      return res.status(502).json({ ok: false, error: 'google_profile_unavailable' });
+    }
+    if (profile.email_verified !== true) {
+      return res.status(401).json({ ok: false, error: 'unverified_google_email' });
+    }
+
+    const usersCol = db.Users.collection();
+    const googleIdentity = { accounts: { $elemMatch: { kind: 'Google', uid: profile.sub } } };
+    const googleAccount = { kind: 'Google', uid: profile.sub };
+    const googleEmail = normalizeEmail(profile.email);
+    const googleDetails = { uid: profile.sub, email: googleEmail, firstname: profile.given_name || '', lastname: profile.family_name || '' };
+    if (pending.intent === 'link') {
+      const owners = await usersCol.find({ $or: [googleIdentity, emailOwnerFilter(googleEmail)] }, { projection: { _id: 1 } }).toArray();
+      if (owners.some(owner => owner._id.toString() !== pending.userOid)) {
+        return res.status(409).json({ ok: false, error: 'google_account_in_use' });
+      }
+      let linkedUser;
+      const linkUpdate = {
+        $addToSet: { accounts: googleAccount, emailHistory: googleEmail, loginEmails: googleEmail },
+        $set: { googleProfile: googleDetails, updatedAt: new Date().toISOString() },
+      };
+      try {
+        linkedUser = await usersCol.findOneAndUpdate(
+          { _id: new ObjectId(pending.userOid), accounts: { $not: { $elemMatch: { kind: 'Google', uid: { $ne: profile.sub } } } } },
+          linkUpdate,
+          { returnDocument: 'after' }
+        );
+      } catch (error) {
+        if (error?.code === 11000) return res.status(409).json({ ok: false, error: 'google_account_in_use' });
+        throw error;
+      }
+      if (!linkedUser) return res.status(409).json({ ok: false, error: 'google_already_linked' });
+      // Linking adds a login method; it never replaces the current user/email/password.
+      return res.json({ ok: true, linked: true, user: req.session.user });
+    }
 
     // Upsert application user following your Users schema
     let firstname = profile?.given_name || '';
@@ -433,60 +493,62 @@ app.post('/api/auth/google/exchange', async (req, res) => {
       if (!lastname && parts.length > 1) lastname = parts.slice(1).join(' ');
     }
 
-    const usersCol = db.Users.collection();
-    const filter = {
-      $or: [
-        { email: profile?.email || null },
-        { 'accounts.kind': 'Google', 'accounts.uid': profile?.sub || null },
-      ],
+    const identityOwner = await usersCol.findOne(googleIdentity);
+    const emailOwner = identityOwner || await usersCol.findOne(emailOwnerFilter(googleEmail));
+    if (emailOwner?.deletionPending && !identityOwner) return res.status(409).json({ ok: false, error: 'account_deletion_pending' });
+    const filter = emailOwner ? { _id: emailOwner._id } : { email: googleEmail };
+    const signInUpdate = {
+      $set: { updatedAt: new Date().toISOString(), googleProfile: googleDetails },
+      $addToSet: { accounts: googleAccount },
+      $setOnInsert: { firstname, lastname, role: 'user', createdAt: new Date() },
     };
-
-    const googleAccount = { kind: 'Google', uid: profile?.sub || '' };
+    if (emailOwner) {
+      signInUpdate.$addToSet.loginEmails = googleEmail;
+      signInUpdate.$addToSet.emailHistory = googleEmail;
+    } else {
+      Object.assign(signInUpdate.$setOnInsert, { email: googleEmail, loginEmails: [googleEmail], emailHistory: [googleEmail] });
+    }
 
     // Atomic upsert to avoid duplicate inserts under concurrent requests.
-    let userDoc = null;
+    let userDoc = emailOwner?.deletionPending ? emailOwner : null;
     try {
-      const res = await usersCol.findOneAndUpdate(
-        filter,
-        {
-          $set: {
-            email: profile?.email || '',
-            firstname: firstname || '',
-            lastname: lastname || '',
-          },
-          // Add Google account if not already present. Safe for existing docs.
-          $addToSet: { accounts: googleAccount },
-          // Only set defaults on first insert; don't duplicate any fields set above
-          $setOnInsert: { createdAt: new Date() },
-        },
-        { upsert: true, returnDocument: 'after' }
-      );
-      userDoc = res.value;
       if (!userDoc) {
-        // In rare cases, attempt a direct read using the same filter
-        userDoc = await usersCol.findOne(filter);
-      }
-      // If user has a local passwordHash but Local account not present, ensure it
-      if (userDoc?.passwordHash) {
-        const hasLocal = Array.isArray(userDoc.accounts) && userDoc.accounts.some(a => a?.kind === 'Local');
-        if (!hasLocal && userDoc.email) {
-          await usersCol.updateOne({ _id: userDoc._id }, { $addToSet: { accounts: { kind: 'Local', uid: userDoc.email } } });
-          userDoc = await usersCol.findOne({ _id: userDoc._id });
+        const res = await usersCol.findOneAndUpdate(
+          filter,
+          signInUpdate,
+          { upsert: true, returnDocument: 'after' }
+        );
+        userDoc = res;
+        if (!userDoc) {
+          // In rare cases, attempt a direct read using the same filter
+          userDoc = await usersCol.findOne(googleIdentity) || await usersCol.findOne(filter);
+        }
+        // If user has a local passwordHash but Local account not present, ensure it
+        if (userDoc?.passwordHash) {
+          const hasLocal = Array.isArray(userDoc.accounts) && userDoc.accounts.some(a => a?.kind === 'Local');
+          if (!hasLocal && userDoc.email) {
+            await usersCol.updateOne({ _id: userDoc._id }, { $addToSet: { accounts: { kind: 'Local', uid: userDoc.email } } });
+            userDoc = await usersCol.findOne({ _id: userDoc._id });
+          }
         }
       }
     } catch (e) {
       // If uniqueness constraints triggered during a race, read the existing doc
       if (e && (e.code === 11000 || /duplicate key/i.test(String(e)))) {
-        userDoc = await usersCol.findOne(filter);
+        userDoc = await usersCol.findOne(googleIdentity) || await usersCol.findOne(filter);
       } else {
         throw e;
       }
     }
 
+    if (!userDoc?._id) return res.status(409).json({ ok: false, error: 'google_account_in_use' });
+    // Rotate the anonymous session before attaching the authenticated user.
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
     // Attach to session (minimal fields + DB id)
     req.session.user = {
       oid: userDoc?._id?.toString?.(),
       provider: 'google',
+      role: userDoc.role === 'admin' ? 'admin' : 'user',
       sub: profile?.sub,
       email: userDoc?.email || profile?.email,
       name: profile?.name,
@@ -507,7 +569,7 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     // Persist session then respond with a trimmed payload
     await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
 
-    console.log('[AUTH] Session saved. SessionID:', req.sessionID, 'Cookie will be:', SESSION_NAME);
+    console.log('[AUTH] Session saved');
 
     return res.json({ ok: true, user: req.session.user });
   } catch (err) {
@@ -540,33 +602,18 @@ app.get('/api/profile', async (req, res) => {
     const users = db.Users.collection();
     const doc = await users.findOne(
       { _id: new ObjectId(oid) },
-      { projection: { email: 1, firstname: 1, lastname: 1, accounts: 1 } }
+      { projection: userProjection }
     );
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
 
-    // Build a safe profile without sensitive IDs (like Google UID)
-    const safeAccounts = Array.isArray(doc.accounts)
-      ? doc.accounts.map(a => ({ kind: a?.kind })).filter(a => a.kind)
-      : [];
-    const safe = {
-      _id: doc._id,
-      email: doc.email || '',
-      firstname: doc.firstname || '',
-      lastname: doc.lastname || '',
-      name: req.session?.user?.name || undefined,
-      picture: req.session?.user?.picture || undefined,
-      accounts: safeAccounts,
-    };
-    return res.json({ ok: true, profile: safe });
+    return res.json({ ok: true, profile: publicProfile(doc, req.session.user) });
   } catch (e) {
     console.error('[SERVER] /api/profile error', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('Backend listening on', PORT);
-// Update profile (firstname, lastname). Keeps email immutable for now.
+// Name editing; email changes use the separate saved-email endpoints.
 app.post('/api/profile/update', async (req, res) => {
   try {
     const oid = req.session?.user?.oid;
@@ -583,30 +630,21 @@ app.post('/api/profile/update', async (req, res) => {
     await users.updateOne({ _id: new ObjectId(oid) }, { $set: updates });
     const doc = await users.findOne(
       { _id: new ObjectId(oid) },
-      { projection: { email: 1, firstname: 1, lastname: 1, accounts: 1 } }
+      { projection: userProjection }
     );
     if (!doc) return res.status(404).json({ ok: false, error: 'not_found' });
     // Update session user for immediate reflection
     if (req.session?.user) {
       if (fn !== undefined) req.session.user.firstname = fn;
       if (ln !== undefined) req.session.user.lastname = ln;
+      req.session.user.name = [doc.firstname, doc.lastname].filter(Boolean).join(' ');
       await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
     }
-    const safeAccounts = Array.isArray(doc.accounts)
-      ? doc.accounts.map(a => ({ kind: a?.kind })).filter(a => a.kind)
-      : [];
-    return res.json({ ok: true, profile: {
-      _id: doc._id,
-      email: doc.email || '',
-      firstname: doc.firstname || '',
-      lastname: doc.lastname || '',
-      accounts: safeAccounts,
-    }});
+    return res.json({ ok: true, profile: publicProfile(doc, req.session.user), user: req.session.user });
   } catch (e) {
     console.error('[SERVER] /api/profile/update error', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
-});
 });
 
 // DB connectivity test: attempts to connect and ping the database
@@ -626,16 +664,10 @@ app.get('/api/test', async (req, res) => {
 // All token handling stays server-side; client calls these endpoints.
 // Debug token cache endpoint to help diagnose credential issues
 app.get('/api/spotify/debug/token', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.sendStatus(404);
   try {
-    // Attempt a lightweight request to ensure token validity
-    let probe = null;
-    try {
-      probe = await spotify.getNewReleases({ country: 'US', limit: 1 });
-    } catch (e) {
-      probe = { error: e?.message || String(e) };
-    }
     const cache = spotify._debugTokenCache ? spotify._debugTokenCache() : {};
-    return res.json({ ok: true, cache, probe });
+    return res.json({ ok: true, cache });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e?.message || 'debug_failed' });
   }
@@ -646,7 +678,7 @@ app.get('/api/spotify/search', async (req, res) => {
     if (!q) return res.status(400).json({ ok: false, error: 'missing_query' });
     const lim = limit ? parseInt(limit, 10) : 10;
     const result = await spotify.search(q, type, lim, market);
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] search error', e);
@@ -658,7 +690,7 @@ app.get('/api/spotify/track/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getTrack(id);
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] track error', e);
@@ -670,7 +702,7 @@ app.get('/api/spotify/album/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getAlbum(id);
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] album error', e);
@@ -690,7 +722,7 @@ app.get('/api/spotify/tracks', async (req, res) => {
     for (let i = 0; i < allIds.length; i += 50) {
       const chunk = allIds.slice(i, i + 50);
       const r = await spotify.getSeveralTracks(chunk, market);
-      if (r.error && !r.data) return res.status(r.status || 500).json({ ok: false, error: r.error });
+      if (r.error) return res.status(r.status || 500).json({ ok: false, error: r.error });
       const tracks = Array.isArray(r.data?.tracks) ? r.data.tracks : [];
       responses.push(...tracks);
     }
@@ -720,7 +752,7 @@ app.get('/api/spotify/albums', async (req, res) => {
     const responses = [];
     for (const chunk of chunks) {
       const r = await spotify.getSeveralAlbums(chunk, market);
-      if (r.error && !r.data) return res.status(r.status || 500).json({ ok: false, error: r.error });
+      if (r.error) return res.status(r.status || 500).json({ ok: false, error: r.error });
       const albums = Array.isArray(r.data?.albums) ? r.data.albums : [];
       responses.push(...albums);
     }
@@ -735,7 +767,7 @@ app.get('/api/spotify/artist/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getArtist(id);
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] artist error', e);
@@ -748,7 +780,7 @@ app.get('/api/spotify/artist/:id/albums', async (req, res) => {
     const { id } = req.params;
     const { include_groups = 'album,single', limit = 50, market } = req.query;
     const result = await spotify.getArtistAlbums(id, { include_groups, limit: parseInt(limit, 10) || 50, market });
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] artist albums error', e);
@@ -760,7 +792,7 @@ app.get('/api/spotify/new-releases', async (req, res) => {
   try {
     const { country = 'US', limit = 50 } = req.query;
     const result = await spotify.getNewReleases({ country, limit: parseInt(limit, 10) || 50 });
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] new releases error', e);
@@ -776,7 +808,7 @@ app.get('/api/spotify/recommendations', async (req, res) => {
       params.seed_genres = 'pop,rock';
     }
     const result = await spotify.getRecommendations(params);
-    if (result.error && !result.data) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] recommendations error', e);
@@ -795,6 +827,13 @@ app.post('/api/reviews/upsert', async (req, res) => {
     const allowed = new Set(['song', 'album', 'artist']);
     if (!allowed.has(String(type))) return res.status(400).json({ ok: false, error: 'invalid_type' });
     if (!oid || typeof oid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_oid' });
+
+    if (trackRatings !== undefined && (
+      type !== 'album' || !trackRatings || typeof trackRatings !== 'object' || Array.isArray(trackRatings) ||
+      Object.entries(trackRatings).some(([trackId, score]) =>
+        !trackId.trim() || !Number.isFinite(score) || score < 0.5 || score > 5 || !Number.isInteger(score * 2)
+      )
+    )) return res.status(400).json({ ok: false, error: 'invalid_track_ratings' });
 
     // If this is the first artist review/rating, ensure an Artist document exists
     if (type === 'artist') {
@@ -858,12 +897,12 @@ app.post('/api/reviews/upsert', async (req, res) => {
     const setFields = { updatedAt: nowIso };
     if (normRating !== undefined) setFields.rating = new Int32(Math.round(normRating * 2));
     if (normText !== undefined) setFields.text = normText;
-    
+
     // Store trackRatings for albums
-    if (type === 'album' && trackRatings && typeof trackRatings === 'object') {
+    if (type === 'album' && trackRatings !== undefined) {
       setFields.trackRatings = trackRatings;
     }
-    
+
     const setOnInsertFields = {
       createdAt: nowIso,
       user: { oid: userOid },
@@ -884,17 +923,17 @@ app.post('/api/reviews/upsert', async (req, res) => {
       console.log('[Reviews][Upsert][DEBUG] filter=', filter,
         'set=', setFields,
         'onInsert=', setOnInsertFields);
-    } catch {}
+    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
 
     const result = await reviews.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
-    const doc = result.value || (await reviews.findOne(filter));
+    const doc = result;
 
     try {
       console.log('[Reviews][Upsert][DEBUG] upsert doc id=', doc?._id?.toString?.() || null,
         'rating(raw)=', doc?.rating,
         'text.len=', typeof doc?.text === 'string' ? doc.text.length : null);
       console.log('[Reviews][Upsert][DEBUG] result.lastErrorObject=', result?.lastErrorObject || null);
-    } catch {}
+    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
     // Ensure user's profile records this review's ObjectId
     try {
       const usersCol = db.Users.collection();
@@ -1058,7 +1097,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
             );
             try {
               console.log('[Albums][UpsertReviewRef][DEBUG] oid=', oid, 'matched=', albumResult.matchedCount, 'modified=', albumResult.modifiedCount, 'upserted=', albumResult.upsertedId);
-            } catch {}
+            } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
           } catch (albumReviewRefErr) {
             console.warn('[Albums] failed album atomic upsert (validation?)', albumReviewRefErr?.message || albumReviewRefErr);
           }
@@ -1148,7 +1187,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                     );
                     artistDoc = await db.Artists.collection().findOne({ spotifyArtistId: a.id });
                   }
-                } catch {}
+                } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
               }
 
               const artistOidRef = artistDoc?._id?.toString?.() || '';
@@ -1159,7 +1198,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                   const artistRes = await spotify.getArtist(artistDoc.spotifyArtistId);
                   const aData = artistRes?.data;
                   if (Array.isArray(aData?.genres)) genresList = aData.genres.slice(0, 20);
-                } catch {}
+                } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
               }
 
               const songSeed = {
@@ -1183,7 +1222,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                   { $setOnInsert: songSeed },
                   { upsert: true, returnDocument: 'after', projection: { _id: 1, title: 1 } }
                 );
-                songDoc = up?.value || null;
+                songDoc = up;
               } catch (dupErr) {
                 if (dupErr && (dupErr.code === 11000 || /duplicate key/i.test(String(dupErr)))) {
                   songDoc = await songsCol.findOne(
@@ -1274,7 +1313,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                       );
                       artistDoc = await db.Artists.collection().findOne({ spotifyArtistId: a.id });
                     }
-                  } catch {}
+                  } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
                 }
                 if (artistDoc && artistDoc._id && artistDoc.oid !== artistDoc._id.toString()) {
                   await db.Artists.collection().updateOne({ _id: artistDoc._id }, { $set: { oid: artistDoc._id.toString() } });
@@ -1362,19 +1401,19 @@ app.post('/api/reviews/upsert', async (req, res) => {
             const albumOidMaybe = songDocForRef?.album?.oid;
             const albumSpotifyId = songDocForRef?.album?.spotifyAlbumId;
             const albumNameMaybe = songDocForRef?.album?.name || '';
-            
+
             // Add this song to the album's songs array
             if (songIdStr && albumSpotifyId) {
               const albumsCol = db.Albums.collection();
               await albumsCol.updateOne(
                 { spotifyAlbumId: albumSpotifyId },
-                { 
+                {
                   $addToSet: { songs: { name: songTitle, oid: songIdStr } },
                   $set: { updatedAt: nowIso }
                 }
               );
             }
-            
+
             // Add this song and album to the artist's arrays
             if (songIdStr && artistOidMaybe) {
               const artistsCol2 = db.Artists.collection();
@@ -1402,13 +1441,14 @@ app.post('/api/reviews/upsert', async (req, res) => {
     if (e && (e.code === 11000 || /duplicate key/i.test(String(e)))) {
       // Unique index collision under race: retry a simple update
       try {
-        const { type, oid, rating, text } = req.body || {};
+        const { type, oid, rating, text, trackRatings } = req.body || {};
         const userOid = req.session?.user?.oid;
         const reviews = db.Reviews.collection();
         const filter = { 'user.oid': userOid, 'item.type': type, 'item.oid': oid };
         const nowIso = new Date().toISOString();
         const set = { updatedAt: nowIso };
         if (typeof text === 'string') set.text = String(text).trim();
+        if (type === 'album' && trackRatings !== undefined) set.trackRatings = trackRatings;
         if (Number.isFinite(rating) && rating >= 0.5 && rating <= 5) {
           const snapped = Math.round(rating * 2) / 2;
           set.rating = new Int32(Math.round(snapped * 2));
@@ -1538,7 +1578,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                             );
                             albumArtistDoc = await db.Artists.collection().findOne({ spotifyArtistId: a.id });
                           }
-                        } catch {}
+                        } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
                       }
                       const albumArtistOidRef = albumArtistDoc?._id?.toString?.() || '';
                       const seed = {
@@ -1624,7 +1664,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                           );
                           artistDoc = await db.Artists.collection().findOne({ spotifyArtistId: a.id });
                         }
-                      } catch {}
+                      } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
                     }
                     const artistOidRef = artistDoc?._id?.toString?.() || '';
                     // Derive genres from the artist
@@ -1634,7 +1674,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                         const artistRes = await spotify.getArtist(artistDoc.spotifyArtistId);
                         const aData = artistRes?.data;
                         if (aData && Array.isArray(aData.genres)) genresList = aData.genres.slice(0, 20);
-                      } catch {}
+                      } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
                     }
                     const songSeed = {
                       title: t.name || '',
@@ -1656,7 +1696,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
                         { $setOnInsert: songSeed },
                         { upsert: true, returnDocument: 'after', projection: { _id: 1, title: 1 } }
                       );
-                      songDoc = up?.value || null;
+                      songDoc = up;
                     } catch (dupErr) {
                       if (dupErr && (dupErr.code === 11000 || /duplicate key/i.test(String(dupErr)))) {
                         songDoc = await songsCol.findOne(
@@ -1771,9 +1811,8 @@ app.delete('/api/reviews/my', async (req, res) => {
 
     const reviews = db.Reviews.collection();
     const filter = { 'user.oid': userOid, 'item.type': type, 'item.oid': oid };
-    const deleted = await reviews.findOneAndDelete(filter);
-    const deletedDoc = deleted?.value || null;
-    
+    const deletedDoc = await reviews.findOneAndDelete(filter);
+
     // If no document was found/deleted, return deleted: false
     if (!deletedDoc) {
       return res.json({ ok: true, deleted: false });
@@ -1817,7 +1856,7 @@ app.delete('/api/reviews/my', async (req, res) => {
     } catch (eref) {
       console.warn('[Reviews] Failed to remove media review reference on delete', eref?.message || eref);
     }
-    
+
     // Return deleted: true since we successfully deleted the document
     return res.json({ ok: true, deleted: true });
   } catch (e) {
@@ -1840,7 +1879,7 @@ app.get('/api/reviews/my', async (req, res) => {
     const doc = await reviews.findOne(query);
     try {
       console.log('[Reviews][my][DEBUG] query=', query, 'found=', !!doc, 'id=', doc?._id?.toString?.() || null);
-    } catch {}
+    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
     if (doc && typeof doc.rating === 'number') doc.rating = doc.rating / 2;
     return res.json({ ok: true, review: doc || null });
   } catch (e) {
@@ -1985,17 +2024,17 @@ app.get('/api/reviews/recent', async (req, res) => {
         .find({ spotifyTrackID: { $in: songIds } })
         .project({ spotifyTrackID: 1, title: 1, image: 1 })
         .toArray();
-      
+
       for (const s of dbSongs) {
         if (s.spotifyTrackID) {
-          songMap.set(s.spotifyTrackID, { 
-            title: s.title || 'Untitled', 
-            coverArt: s.image || '', 
-            route: `/song/${s.spotifyTrackID}` 
+          songMap.set(s.spotifyTrackID, {
+            title: s.title || 'Untitled',
+            coverArt: s.image || '',
+            route: `/song/${s.spotifyTrackID}`
           });
         }
       }
-      
+
       // For any songs not in our DB, fall back to Spotify
       const missingSongIds = songIds.filter(id => !songMap.has(id));
       if (missingSongIds.length > 0) {
@@ -2019,17 +2058,17 @@ app.get('/api/reviews/recent', async (req, res) => {
         .find({ spotifyAlbumId: { $in: albumIds } })
         .project({ spotifyAlbumId: 1, name: 1, image: 1 })
         .toArray();
-      
+
       for (const a of dbAlbums) {
         if (a.spotifyAlbumId) {
-          albumMap.set(a.spotifyAlbumId, { 
-            title: a.name || 'Untitled', 
-            coverArt: a.image || '', 
-            route: `/album/${a.spotifyAlbumId}` 
+          albumMap.set(a.spotifyAlbumId, {
+            title: a.name || 'Untitled',
+            coverArt: a.image || '',
+            route: `/album/${a.spotifyAlbumId}`
           });
         }
       }
-      
+
       // For any albums not in our DB, fall back to Spotify
       const missingAlbumIds = albumIds.filter(id => !albumMap.has(id));
       if (missingAlbumIds.length > 0) {
@@ -2053,17 +2092,17 @@ app.get('/api/reviews/recent', async (req, res) => {
         .find({ spotifyArtistId: { $in: artistIds } })
         .project({ spotifyArtistId: 1, name: 1, image: 1 })
         .toArray();
-      
+
       for (const a of dbArtists) {
         if (a.spotifyArtistId) {
-          artistMap.set(a.spotifyArtistId, { 
-            title: a.name || 'Unknown Artist', 
-            coverArt: a.image || '', 
-            route: `/artist/${a.spotifyArtistId}` 
+          artistMap.set(a.spotifyArtistId, {
+            title: a.name || 'Unknown Artist',
+            coverArt: a.image || '',
+            route: `/artist/${a.spotifyArtistId}`
           });
         }
       }
-      
+
       // For any artists not in our DB, fall back to Spotify
       const missingArtistIds = artistIds.filter(id => !artistMap.has(id));
       for (const id of missingArtistIds.slice(0, 20)) {
@@ -2192,6 +2231,7 @@ app.get('/api/reviews/:reviewId', async (req, res) => {
 
 // Debug: fetch raw review doc for current user & item (no media mutations)
 app.get('/api/reviews/debug/find', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.sendStatus(404);
   try {
     const userOid = req.session?.user?.oid;
     if (!userOid) return res.status(401).json({ ok: false, error: 'unauthorized' });
@@ -2210,6 +2250,7 @@ app.get('/api/reviews/debug/find', async (req, res) => {
 
 // Debug: list all reviews for current user (raw docs)
 app.get('/api/reviews/debug/list', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.sendStatus(404);
   try {
     const userOid = req.session?.user?.oid;
     if (!userOid) return res.status(401).json({ ok: false, error: 'unauthorized' });
@@ -2221,4 +2262,8 @@ app.get('/api/reviews/debug/list', async (req, res) => {
     console.error('[Reviews][debug/list] error', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('Backend listening on', PORT);
 });

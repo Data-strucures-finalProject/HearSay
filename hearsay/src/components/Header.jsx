@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/theme';
 import { useEffect, useState } from 'react';
 import { sanitizeSearchQuery } from '../utils/sanitize';
 import { onAuthChange } from '../utils/authBus';
@@ -40,11 +40,11 @@ export default function Header() {
       window.removeEventListener('focus', onFocus);
     };
   }, []);
-  
+
   const handleSearch = (e) => {
     e.preventDefault();
     const sanitizedQuery = sanitizeSearchQuery(searchQuery.trim());
-    
+
     if (sanitizedQuery) {
       navigate(`/search?q=${encodeURIComponent(sanitizedQuery)}`);
       setSearchQuery('');
@@ -56,13 +56,14 @@ export default function Header() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-b-2 border-black dark:border-white transition-colors">
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <Link to="/" className="hidden md:block text-xl font-bold hover:underline text-black dark:text-white">HearSay</Link>
-        
+
         {/* Hide desktop nav on small screens to avoid overlapping mobile controls */}
         <nav aria-label="Primary navigation" className="hidden md:flex flex-1 mx-8">
           <ul className="flex justify-center space-x-8">
             <li><Link to="/recent-reviews" className="hover:underline text-black dark:text-white">Recent Reviews</Link></li>
             <li><Link to="/my-reviews" className="hover:underline text-black dark:text-white">My Reviews</Link></li>
             <li><Link to="/random" className="hover:underline text-black dark:text-white">Random</Link></li>
+            {me.authenticated && me.user?.role === 'admin' && <li><Link to="/admin" className="hover:underline text-black dark:text-white">Admin</Link></li>}
           </ul>
         </nav>
 
@@ -108,7 +109,7 @@ export default function Header() {
           <Link to="/" className="text-xl font-bold text-black dark:text-white hover:underline">
             HearSay
           </Link>
-          
+
           {/* push buttons to the right */}
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -118,7 +119,7 @@ export default function Header() {
             >
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
-            
+
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="h-10 w-10 border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex items-center justify-center"
@@ -151,6 +152,7 @@ export default function Header() {
 
           <nav role="navigation" aria-label="Mobile primary">
             <ul className="space-y-3">
+              {me.authenticated && me.user?.role === 'admin' && <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Admin</Link></li>}
               <li>
                 <Link
                   to="/recent-reviews"

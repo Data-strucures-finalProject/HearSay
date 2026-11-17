@@ -111,7 +111,7 @@ export const CRUD = {
       update && (update.$set || update.$inc || update.$push || update.$pull) ? update : { $set: update },
       { upsert, returnDocument }
     );
-    return res.value;
+    return res;
   },
   async deleteById(col, id) {
     const _id = toObjectId(id);

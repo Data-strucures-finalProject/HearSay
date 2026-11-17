@@ -1,7 +1,6 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { subscribeToAuthChange } from '../utils/authBus';
-
-const AuthContext = createContext(null);
+import { AuthContext } from './auth';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -19,12 +18,12 @@ export function AuthProvider({ children }) {
             // Cache for offline UI convenience
             try {
               localStorage.setItem('hs_user', JSON.stringify(data.user));
-            } catch {}
+            } catch { /* Storage is optional; authorization remains server-side. */ }
           } else {
             setUser(null);
             try {
               localStorage.removeItem('hs_user');
-            } catch {}
+            } catch { /* Storage is optional; authorization remains server-side. */ }
           }
         }
       } catch (e) {
@@ -44,7 +43,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         try {
           localStorage.removeItem('hs_user');
-        } catch {}
+        } catch { /* Storage is optional; authorization remains server-side. */ }
       }
     });
     return unsubscribe;
@@ -56,7 +55,7 @@ export function AuthProvider({ children }) {
       setUser(null);
       try {
         localStorage.removeItem('hs_user');
-      } catch {}
+      } catch { /* Storage is optional; authorization remains server-side. */ }
     } catch (e) {
       console.error('Logout failed:', e);
     }
@@ -67,12 +66,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
 }

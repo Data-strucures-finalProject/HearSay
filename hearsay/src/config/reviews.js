@@ -27,10 +27,11 @@ async function apiJson(method, pathAndQuery, body) {
   return data;
 }
 
-export async function upsertReview({ type, oid, rating, text }) {
+export async function upsertReview({ type, oid, rating, text, trackRatings }) {
   const payload = { type, oid };
   if (typeof rating !== 'undefined') payload.rating = rating;
   if (typeof text !== 'undefined') payload.text = text;
+  if (typeof trackRatings !== 'undefined') payload.trackRatings = trackRatings;
   const { review } = await apiJson('POST', '/reviews/upsert', payload);
   return review;
 }
