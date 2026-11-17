@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getSpotifyAlbum } from '../config/spotify';
 import { upsertReview, getMyReview, deleteMyReview } from '../config/reviews';
-import { useTheme } from '../context/ThemeContext';
+import { useTheme } from '../context/theme';
 import HeadphoneRating from './HeadphoneRating';
-import { useToast } from '../context/ToastContext';
+import { useToast } from '../context/toast';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 
 const ALBUM_REVIEW_WORD_LIMIT = 1000;
@@ -16,7 +16,7 @@ export default function AlbumRatingPage() {
   const [albumDetails, setAlbumDetails] = useState(null);
   const [tracks, setTracks] = useState([]);
   const [trackRatings, setTrackRatings] = useState({});
-  const [relatedAlbums, setRelatedAlbums] = useState([]);
+  const [relatedAlbums] = useState([]);
   const [loading, setLoading] = useState(true);
   const [review, setReview] = useState('');
   const [albumRating, setAlbumRating] = useState(0);
@@ -36,7 +36,7 @@ export default function AlbumRatingPage() {
 
       try {
         setLoading(true);
-        
+
         // Always fetch from Spotify to get complete tracklist
         const albumResponse = await getSpotifyAlbum(albumId);
         const albumData = {
@@ -90,7 +90,7 @@ export default function AlbumRatingPage() {
           const savedRating = !!(existing && typeof existing.rating === 'number' && existing.rating > 0);
           setHasSavedRating(savedRating);
         }
-      } catch (e) {
+      } catch {
         // Not logged in or no review; ignore
       }
     };
@@ -101,7 +101,7 @@ export default function AlbumRatingPage() {
   useEffect(() => {
     const loadTrackRatings = async () => {
       if (!tracks.length) return;
-      
+
       try {
         // Fetch reviews for each track
         const ratings = {};
@@ -111,16 +111,16 @@ export default function AlbumRatingPage() {
             if (existingReview && typeof existingReview.rating === 'number') {
               ratings[track.id] = existingReview.rating;
             }
-          } catch (e) {
+          } catch {
             // No review for this track, skip
           }
         }
         setTrackRatings(ratings);
-      } catch (e) {
+      } catch {
         // Not logged in or error; ignore
       }
     };
-    
+
     loadTrackRatings();
   }, [tracks]);
 
@@ -142,7 +142,7 @@ export default function AlbumRatingPage() {
     try {
       // Filter to only include tracks that have been rated (non-zero ratings)
       const sanitizedRatings = Object.entries(trackRatings)
-        .filter(([trackId, rating]) => rating && rating > 0)
+        .filter(([, rating]) => rating && rating > 0)
         .reduce((acc, [trackId, rating]) => {
           acc[trackId] = sanitizeRating(rating);
           return acc;
@@ -187,21 +187,21 @@ export default function AlbumRatingPage() {
 
   const handleSubmitReview = async () => {
     const sanitizedReview = sanitizeInput(review);
-    
+
     console.log('Album review:', {
       albumId: album.id,
       albumTitle: album.title,
       review: sanitizedReview,
       wordCount: wordCount
     });
-    
+
     if (!sanitizedReview.trim()) {
       alert('Please write a review before submitting!');
     } else if (wordCount > ALBUM_REVIEW_WORD_LIMIT) {
       alert(`Review exceeds ${ALBUM_REVIEW_WORD_LIMIT} word limit. Please shorten your review.`);
     } else {
       try {
-        const saved = await upsertReview({ type: 'album', oid: albumId, text: sanitizedReview, rating: albumRating ? sanitizeRating(albumRating) : undefined });
+        await upsertReview({ type: 'album', oid: albumId, text: sanitizedReview, rating: albumRating ? sanitizeRating(albumRating) : undefined });
         // Immediate refetch to ensure state matches server (and scaled rating if added later)
         try {
           const latest = await getMyReview('album', albumId);
@@ -209,7 +209,7 @@ export default function AlbumRatingPage() {
             if (typeof latest.text === 'string') setReview(latest.text);
             if (typeof latest.rating === 'number') setAlbumRating(latest.rating);
           }
-        } catch {}
+        } catch { /* Keep the current view when optional enrichment is unavailable. */ }
         setIsEditingReview(false);
         setHasSavedReview(true);
         success('Review saved');
@@ -232,12 +232,12 @@ export default function AlbumRatingPage() {
       return;
     }
     try {
-      const saved = await upsertReview({ type: 'album', oid: albumId, rating: sanitized });
+      await upsertReview({ type: 'album', oid: albumId, rating: sanitized });
       // Refetch to capture any server-side normalization
       try {
         const latest = await getMyReview('album', albumId);
         if (latest && typeof latest.rating === 'number') setAlbumRating(latest.rating);
-      } catch {}
+      } catch { /* Keep the current view when optional enrichment is unavailable. */ }
       setIsEditingRating(false);
       setHasSavedRating(true);
       success('Rating saved');
@@ -253,7 +253,7 @@ export default function AlbumRatingPage() {
   const handleReviewChange = (e) => {
     const newText = e.target.value;
     const newWordCount = newText.trim().split(/\s+/).filter(word => word.length > 0).length;
-    
+
     // Only update if within word limit
     if (newWordCount <= ALBUM_REVIEW_WORD_LIMIT || newText.length < review.length) {
       setReview(newText);
@@ -262,14 +262,14 @@ export default function AlbumRatingPage() {
 
   const handleDeleteAlbumReview = async () => {
     if (!albumId) return;
-    
+
     if (!confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
       return;
     }
-    
+
     try {
       await deleteMyReview('album', albumId);
-      
+
       // Successfully deleted
       setReview('');
       setAlbumRating(0);
@@ -341,7 +341,7 @@ export default function AlbumRatingPage() {
                 className="w-full"
               />
             </div>
-            
+
             {/* Review text above rating */}
             <div className="border-2 border-black dark:border-white p-4 bg-white dark:bg-gray-900 text-black dark:text-white mb-6">
               <h2 className="font-semibold mb-4">
@@ -362,7 +362,7 @@ export default function AlbumRatingPage() {
               ) : (
                 <>
                   <div className="relative">
-                    <textarea 
+                    <textarea
                       value={review}
                       onChange={handleReviewChange}
                       className="w-full h-32 border-2 border-black dark:border-white bg-white dark:bg-gray-800 text-black dark:text-white p-2 pb-6 resize-none"
@@ -374,7 +374,7 @@ export default function AlbumRatingPage() {
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 mt-4">
-                    <button 
+                    <button
                       onClick={handleSubmitReview}
                       className="flex-1 border-2 border-black dark:border-white py-2 hover:bg-gray-100 dark:hover:bg-gray-800 bg-white dark:bg-gray-900 text-black dark:text-white transition-colors"
                     >
@@ -493,7 +493,7 @@ export default function AlbumRatingPage() {
               </div>
               {/* Submit Rating Button */}
               <div className="p-4 border-t-2 border-black dark:border-white">
-                <button 
+                <button
                   onClick={handleSubmitRatings}
                   className="w-full border-2 border-black dark:border-white py-2 hover:bg-gray-100 dark:hover:bg-gray-800 bg-white dark:bg-gray-900 text-black dark:text-white transition-colors"
                 >

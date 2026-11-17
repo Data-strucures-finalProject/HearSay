@@ -5,25 +5,32 @@ import HeadphoneRating from './HeadphoneRating';
 export default function RecentReviewsPage() {
   const [songReviews, setSongReviews] = useState([]);
   const [albumReviews, setAlbumReviews] = useState([]);
+  const [artistReviews, setArtistReviews] = useState([]);
   const [songNextOffset, setSongNextOffset] = useState(0);
   const [albumNextOffset, setAlbumNextOffset] = useState(0);
+  const [artistNextOffset, setArtistNextOffset] = useState(0);
   const [songLoading, setSongLoading] = useState(false);
   const [albumLoading, setAlbumLoading] = useState(false);
+  const [artistLoading, setArtistLoading] = useState(false);
+  const [feedErrors, setFeedErrors] = useState({});
   const didInit = useRef(false);
   const navigate = useNavigate();
 
   const loadMoreSongs = async () => {
     if (songLoading || songNextOffset === null) return;
     setSongLoading(true);
+    setFeedErrors(current => ({ ...current, song: null }));
     try {
       const res = await fetch(`/api/reviews/recent?limit=5&offset=${songNextOffset}&type=song`, { credentials: 'include' });
       const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error('Failed to load song reviews. Please try again.');
       if (data.ok) {
         setSongReviews(prev => [...prev, ...(data.items || [])]);
         setSongNextOffset(typeof data.nextOffset === 'number' ? data.nextOffset : null);
       }
     } catch (e) {
       console.error('Failed to load song reviews', e);
+      setFeedErrors(current => ({ ...current, song: 'Failed to load song reviews. Please try again.' }));
     } finally {
       setSongLoading(false);
     }
@@ -32,17 +39,40 @@ export default function RecentReviewsPage() {
   const loadMoreAlbums = async () => {
     if (albumLoading || albumNextOffset === null) return;
     setAlbumLoading(true);
+    setFeedErrors(current => ({ ...current, album: null }));
     try {
       const res = await fetch(`/api/reviews/recent?limit=5&offset=${albumNextOffset}&type=album`, { credentials: 'include' });
       const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error('Failed to load album reviews. Please try again.');
       if (data.ok) {
         setAlbumReviews(prev => [...prev, ...(data.items || [])]);
         setAlbumNextOffset(typeof data.nextOffset === 'number' ? data.nextOffset : null);
       }
     } catch (e) {
       console.error('Failed to load album reviews', e);
+      setFeedErrors(current => ({ ...current, album: 'Failed to load album reviews. Please try again.' }));
     } finally {
       setAlbumLoading(false);
+    }
+  };
+
+  const loadMoreArtists = async () => {
+    if (artistLoading || artistNextOffset === null) return;
+    setArtistLoading(true);
+    setFeedErrors(current => ({ ...current, artist: null }));
+    try {
+      const res = await fetch(`/api/reviews/recent?limit=5&offset=${artistNextOffset}&type=artist`, { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error('Failed to load artist reviews. Please try again.');
+      if (data.ok) {
+        setArtistReviews(prev => [...prev, ...(data.items || [])]);
+        setArtistNextOffset(typeof data.nextOffset === 'number' ? data.nextOffset : null);
+      }
+    } catch (e) {
+      console.error('Failed to load artist reviews', e);
+      setFeedErrors(current => ({ ...current, artist: 'Failed to load artist reviews. Please try again.' }));
+    } finally {
+      setArtistLoading(false);
     }
   };
 
@@ -51,6 +81,7 @@ export default function RecentReviewsPage() {
     didInit.current = true;
     loadMoreSongs();
     loadMoreAlbums();
+    loadMoreArtists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -107,12 +138,13 @@ export default function RecentReviewsPage() {
         <span className="text-black dark:text-white">Recent Reviews</span>
       </h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Songs Column */}
         <div>
           <h2 className="text-xl font-semibold mb-4">
             <span className="text-black dark:text-white">Songs ({songReviews.length})</span>
           </h2>
+          {feedErrors.song && <p role="alert" className="mb-4 text-red-600">{feedErrors.song}</p>}
           <div className="space-y-2">
             {songReviews.length > 0 ? (
               songReviews.map(r => <ReviewCard key={r.id} r={r} />)
@@ -142,6 +174,7 @@ export default function RecentReviewsPage() {
           <h2 className="text-xl font-semibold mb-4">
             <span className="text-black dark:text-white">Albums ({albumReviews.length})</span>
           </h2>
+          {feedErrors.album && <p role="alert" className="mb-4 text-red-600">{feedErrors.album}</p>}
           <div className="space-y-2">
             {albumReviews.length > 0 ? (
               albumReviews.map(r => <ReviewCard key={r.id} r={r} />)
@@ -162,6 +195,36 @@ export default function RecentReviewsPage() {
               </button>
             ) : albumReviews.length > 0 ? (
               <p className="text-gray-600 dark:text-gray-400 text-sm">No more albums</p>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Artists Column */}
+        <div>
+          <h2 className="text-xl font-semibold mb-4">
+            <span className="text-black dark:text-white">Artists ({artistReviews.length})</span>
+          </h2>
+          {feedErrors.artist && <p role="alert" className="mb-4 text-red-600">{feedErrors.artist}</p>}
+          <div className="space-y-2">
+            {artistReviews.length > 0 ? (
+              artistReviews.map(r => <ReviewCard key={r.id} r={r} />)
+            ) : !artistLoading ? (
+              <div className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 p-6 text-center">
+                <p className="text-gray-600 dark:text-gray-400">No artist reviews yet</p>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4 flex justify-center">
+            {artistNextOffset !== null ? (
+              <button
+                disabled={artistLoading}
+                onClick={loadMoreArtists}
+                className="px-4 py-2 border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-60"
+              >
+                {artistLoading ? 'Loading…' : 'Load More Artists'}
+              </button>
+            ) : artistReviews.length > 0 ? (
+              <p className="text-gray-600 dark:text-gray-400 text-sm">No more artists</p>
             ) : null}
           </div>
         </div>

@@ -43,6 +43,50 @@
       },
       "lastname": {
         "bsonType": "string"
+      },
+      "role": { "enum": ["user", "admin"] },
+      "isDefaultAdmin": { "bsonType": "bool" },
+      "deletionPending": { "bsonType": "bool" },
+      "passwordHash": { "bsonType": "string" },
+      "createdAt": { "bsonType": ["date", "string"] },
+      "updatedAt": { "bsonType": ["date", "string"] },
+      "reviewIds": { "bsonType": "array", "items": { "bsonType": "objectId" } },
+      "loginEmails": {
+        "bsonType": "array",
+        "uniqueItems": true,
+        "items": {
+          "bsonType": "string"
+        }
+      },
+      "emailHistory": {
+        "bsonType": "array",
+        "uniqueItems": true,
+        "items": {
+          "bsonType": "string"
+        }
+      },
+      "googleProfile": {
+        "bsonType": "object",
+        "required": [
+          "uid",
+          "email",
+          "firstname",
+          "lastname"
+        ],
+        "properties": {
+          "uid": {
+            "bsonType": "string"
+          },
+          "email": {
+            "bsonType": "string"
+          },
+          "firstname": {
+            "bsonType": "string"
+          },
+          "lastname": {
+            "bsonType": "string"
+          }
+        }
       }
     }
   }

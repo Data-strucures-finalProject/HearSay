@@ -8,9 +8,19 @@ db.createCollection("users", {
       properties: {
         _id: { bsonType: "objectId" },
         email: { bsonType: "string" },
+        loginEmails: { bsonType: "array", uniqueItems: true, items: { bsonType: "string" } },
+        emailHistory: { bsonType: "array", uniqueItems: true, items: { bsonType: "string" } },
+        reviewIds: { bsonType: "array", items: { bsonType: "objectId" } },
+        googleProfile: {
+          bsonType: "object", required: ["uid", "email", "firstname", "lastname"],
+          properties: { uid: { bsonType: "string" }, email: { bsonType: "string" }, firstname: { bsonType: "string" }, lastname: { bsonType: "string" } }
+        },
         firstname: { bsonType: "string" },
         lastname: { bsonType: "string" },
         passwordHash: { bsonType: "string" },
+        deletionPending: { bsonType: "bool" },
+        role: { enum: ["user", "admin"] },
+        isDefaultAdmin: { bsonType: "bool" },
         createdAt: { bsonType: ["date", "string"] },
         updatedAt: { bsonType: ["date", "string"] },
         accounts: {
@@ -37,6 +47,11 @@ db.createCollection("users", {
   validationAction: "error"
 });
 
+db.users.createIndex({ isDefaultAdmin: 1 }, { unique: true, partialFilterExpression: { isDefaultAdmin: true }, name: "uniq_default_admin" });
+db.users.createIndex(
+  { loginEmails: 1 },
+  { unique: true, partialFilterExpression: { loginEmails: { $exists: true } }, name: "uniq_login_email" }
+);
 db.users.createIndex(
   { email: 1 },
   {
