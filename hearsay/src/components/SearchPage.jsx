@@ -8,7 +8,7 @@ export default function SearchPage() {
   const query = searchParams.get('q');
   const navigate = useNavigate();
   const location = useLocation();
-  
+
   const [results, setResults] = useState({
     artists: [],
     albums: [],
@@ -21,22 +21,22 @@ export default function SearchPage() {
     albums: false,
     tracks: false
   });
-  const [searchQuery, setSearchQuery] = useState(query || '');
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
     const query = searchParams.get('q');
-    
+
     if (query) {
       const sanitizedQuery = sanitizeSearchQuery(query);
-      setSearchQuery(sanitizedQuery);
       performSearch(sanitizedQuery);
+    } else {
+      setLoading(false);
     }
   }, [location.search]);
 
   const performSearch = async (query) => {
     const sanitizedQuery = sanitizeSearchQuery(query);
-    
+
     if (!sanitizedQuery.trim()) {
       setError('Please enter a search term');
       return;
@@ -45,7 +45,7 @@ export default function SearchPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       // Use server proxy wrapper; request all three categories in one call
       const response = await searchSpotify(sanitizedQuery, 'artist,album,track', 50, 'US');
 
@@ -125,6 +125,7 @@ export default function SearchPage() {
       <h1 className="text-2xl font-bold mb-6">
         <span className="text-black dark:text-white">Search Results for "{query}"</span>
       </h1>
+      {error && <p role="alert" className="mb-4 text-red-600">{error}</p>}
 
       {/* ARTISTS SECTION */}
       <section className="mb-8 border-2 border-black dark:border-white bg-white dark:bg-gray-900 p-4">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSpotifyArtist, getSpotifyArtistAlbums, getSpotifyAlbum, getSpotifyAlbums, getSavedArtist } from '../config/spotify';
+import { getSpotifyArtist, getSpotifyArtistAlbums, getSpotifyAlbums, getSavedArtist } from '../config/spotify';
 import { upsertReview, getMyReview, deleteMyReview } from '../config/reviews';
 import HeadphoneRating from './HeadphoneRating';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
@@ -8,7 +8,7 @@ import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 export default function ArtistPage() {
   const { artistId } = useParams();
   const navigate = useNavigate();
-  
+
 
   const [artistDetails, setArtistDetails] = useState(null);
   const [albums, setAlbums] = useState([]);
@@ -35,12 +35,12 @@ export default function ArtistPage() {
       try {
         setLoading(true);
         setError(null);
-        
+
         // Prefer saved artist metadata in DB first; fallback to Spotify
         let artistMeta = null;
         try {
           artistMeta = await getSavedArtist(artistId);
-        } catch {}
+        } catch { /* Keep the current view when optional enrichment is unavailable. */ }
 
         if (artistMeta) {
           setArtistDetails({
@@ -69,7 +69,7 @@ export default function ArtistPage() {
 
         (albumsResponse.items || []).forEach(item => {
           const key = item.name.toLowerCase().trim();
-          
+
           if (item.album_type === 'album') {
             if (!seenAlbums.has(key)) {
               seenAlbums.set(key, item);
@@ -89,7 +89,7 @@ export default function ArtistPage() {
         // Get full details for albums in batches to avoid rate limits
         const albumIds = albumItems.slice(0, 50).map(a => a.id);
         let sortedAlbums = [];
-        
+
         if (albumIds.length > 0) {
           const batchedAlbumsResp = await getSpotifyAlbums(albumIds);
           const albumDetailsResponses = Array.isArray(batchedAlbumsResp?.albums) ? batchedAlbumsResp.albums : [];
@@ -113,7 +113,7 @@ export default function ArtistPage() {
         // Get full details for singles in batches and extract first track
         const singleIds = singleItems.slice(0, 50).map(s => s.id);
         let sortedSingles = [];
-        
+
         if (singleIds.length > 0) {
           const batchedSinglesResp = await getSpotifyAlbums(singleIds);
           const singleDetailsResponses = Array.isArray(batchedSinglesResp?.albums) ? batchedSinglesResp.albums : [];
@@ -162,14 +162,14 @@ export default function ArtistPage() {
             const savedRating = !!(existing && typeof existing.rating === 'number' && existing.rating > 0);
             setHasSavedRating(savedRating);
           }
-        } catch {}
+        } catch { /* Keep the current view when optional enrichment is unavailable. */ }
 
         // Fetch top rated songs for this artist
         try {
           const resp = await fetch(`/api/reviews/top-songs-for-artist?artistId=${encodeURIComponent(artistId)}&limit=5`, { credentials: 'include' });
           const data = await resp.json().catch(() => null);
           if (resp.ok && data?.ok) setTopSongs(Array.isArray(data.songs) ? data.songs : []);
-        } catch {}
+        } catch { /* Keep the current view when optional enrichment is unavailable. */ }
       } catch (error) {
         console.error('Error fetching artist data:', error);
         setError('An error occurred while loading artist data. Please try again.');
@@ -225,14 +225,14 @@ export default function ArtistPage() {
 
   const handleDeleteArtistReview = async () => {
     if (!artistId) return;
-    
+
     if (!confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
       return;
     }
-    
+
     try {
       await deleteMyReview('artist', artistId);
-      
+
       // Successfully deleted
       setReviewText('');
       setArtistRating(0);
@@ -274,7 +274,7 @@ export default function ArtistPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="border-2 border-red-500 bg-white dark:bg-gray-900 p-6 text-red-500">
           <p>{error}</p>
-          <button 
+          <button
             onClick={() => navigate(-1)}
             className="mt-4 border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
@@ -300,9 +300,9 @@ export default function ArtistPage() {
         <div className="flex flex-col md:flex-row items-start gap-8">
           <div className="w-full md:w-64 aspect-square md:h-64 flex-shrink-0 border-2 border-black dark:border-white">
             {artistDetails?.image ? (
-              <img 
-                src={artistDetails.image} 
-                alt={artistDetails.name} 
+              <img
+                src={artistDetails.image}
+                alt={artistDetails.name}
                 className="w-full h-full object-cover"
               />
             ) : (
@@ -330,7 +330,7 @@ export default function ArtistPage() {
                 <p className="font-semibold mb-2">About:</p>
                 <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                   {artistDetails?.name} is a {artistDetails?.genres?.[0] || 'music'} artist with{' '}
-                  {artistDetails?.followers?.toLocaleString()} followers on Spotify. 
+                  {artistDetails?.followers?.toLocaleString()} followers on Spotify.
                   {artistDetails?.genres && artistDetails.genres.length > 1 && (
                     <> Their music spans across {artistDetails.genres.slice(0, 3).join(', ')} genres.</>
                   )}
@@ -482,9 +482,9 @@ export default function ArtistPage() {
                 >
                   <div className="aspect-square mb-2 border-2 border-black dark:border-white">
                     {single.coverArt ? (
-                      <img 
-                        src={single.coverArt} 
-                        alt={single.title} 
+                      <img
+                        src={single.coverArt}
+                        alt={single.title}
                         className="w-full h-full object-cover"
                       />
                     ) : (

@@ -21,7 +21,7 @@ const MyReviewsPage = () => {
     setLoading(true);
     try {
       const { items, nextOffset: no } = await listMyReviews({ limit: 5, offset: nextOffset });
-      
+
       // Enrich album reviews with media metadata
       const enrichedItems = await Promise.all(
         items.map(async (review) => {
@@ -186,17 +186,17 @@ const MyReviewsPage = () => {
   const handleDeleteReview = async (id) => {
     const r = reviews.find(x => x.id === id);
     if (!r) return;
-    
+
     if (!confirm('Are you sure you want to delete this review? This action cannot be undone.')) {
       return;
     }
 
     try {
       await deleteMyReview(r.type, r.oid);
-      
+
       // Successfully deleted - remove from local state
       setReviews(prev => prev.filter(item => item.id !== id));
-      
+
       // Clean up edit state
       setEditOpen(prev => {
         const next = { ...prev };
@@ -229,10 +229,6 @@ const MyReviewsPage = () => {
   };
 
   // Removed secondary fetchReviews effect to avoid duplicating review entries.
-
-  const toggleExpandReview = (reviewId) => {
-    setExpandedReviewId((prevId) => (prevId === reviewId ? null : reviewId));
-  };
 
   return (
     <main className="container mx-auto px-4 py-8">

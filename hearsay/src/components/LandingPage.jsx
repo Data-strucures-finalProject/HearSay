@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchSpotify } from '../config/spotify';
-import { useTheme } from '../context/ThemeContext';
 
 const MIN_LOADING_TIME = 1000;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -25,7 +24,6 @@ const LOCALES = [
 ];
 
 export default function LandingPage() {
-  const { theme } = useTheme();
   const [albums, setAlbums] = useState([]);
   const [songs, setSongs] = useState([]);
   const [albumsLoading, setAlbumsLoading] = useState(true);
@@ -51,7 +49,7 @@ export default function LandingPage() {
     localStorage.setItem('hearsay_selected_locale', newLocale);
   };
 
-  const fetchPopularMusic = async () => {
+  const fetchPopularMusic = useCallback(async () => {
     try {
       setAlbumsLoading(true);
       setSongsLoading(true);
@@ -138,7 +136,7 @@ export default function LandingPage() {
       // Calculate remaining delay needed
       const elapsed = Date.now() - loadingStartTime;
       const remainingDelay = Math.max(0, MIN_LOADING_TIME - elapsed);
-      
+
       await delay(remainingDelay);
 
       setAlbums(randomAlbums);
@@ -151,11 +149,11 @@ export default function LandingPage() {
       setAlbumsLoading(false);
       setSongsLoading(false);
     }
-  };
+  }, [selectedLocale]);
 
   useEffect(() => {
     fetchPopularMusic();
-  }, [selectedLocale]);
+  }, [fetchPopularMusic]);
 
   const handleRefresh = () => {
     fetchPopularMusic();
@@ -183,14 +181,14 @@ export default function LandingPage() {
               aria-label="Refresh music"
               title="Refresh music"
             >
-              <svg 
-                width="16" 
-                height="16" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
                 strokeLinejoin="round"
                 className="text-gray-600 dark:text-gray-400"
               >

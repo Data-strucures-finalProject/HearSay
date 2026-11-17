@@ -11,7 +11,7 @@ if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
 // Simple in-memory token cache
 let _cached = { token: null, expiresAt: 0 };
 export function _debugTokenCache() {
-  return { ..._cached };
+  return { hasToken: Boolean(_cached.token), expiresAt: _cached.expiresAt };
 }
 
 async function fetchAppToken() {
