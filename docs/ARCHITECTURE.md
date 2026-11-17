@@ -51,7 +51,7 @@ authorize access. Account exports exclude credentials. Account deletion removes 
 reviews, references and sessions while retaining shared music metadata; a durable marker
 allows retrying incomplete cleanup on the standalone MongoDB deployment.
 
-The ten Phase II view definitions are installed/reconciled during backend startup. Public Discover/Community APIs query MongoDB views with validated search, filters, paging and chart facets. The integrity view uses the existing admin role middleware. See [view-to-page mapping](ANALYTICAL_VIEWS.md).
+Backend startup reconciles analytical MongoDB views. Discover/Community query them through public endpoints; the integrity view requires the admin middleware. See [API contracts](BACKEND_REFERENCE.md#analytical-queries).
 
 ## Historical rendered diagrams
 
@@ -64,6 +64,4 @@ implementation references:
 | high-level.png | Earlier conceptual site structure |
 | flow.png | Earlier conceptual navigation flow |
 
-Use the diagrams above or the updated PlantUML source for current architecture figures.
-The PNGs were inspected but not regenerated; their historical status is explicit
-to avoid presenting old behavior as the current app.
+Use the Mermaid diagrams above or the PlantUML source for current architecture.

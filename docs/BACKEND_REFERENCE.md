@@ -1,14 +1,12 @@
 # HearSay backend reference
 
-Reviewed November 17, 2026 against `hearsay/server`, schema tooling and Compose.
-
 ## Architecture
 
 Express 5 uses the native MongoDB driver, express-session, connect-mongo and bcryptjs; Mongoose is not used. Spotify client-credentials tokens are cached in server memory. Google authorization starts with a server-session state and PKCE challenge, exchanges a code and fetches Google userinfo. Sign-in establishes a session; linking adds a provider to the initiating user. The server does not independently verify a JWT signature.
 
 MongoDB, email-alias initialization and default-admin bootstrap complete before the API listens. Alias/default-admin index failures stop startup; other legacy user/review index failures are logged. `/api/health` reports process health; `/api/test` actually pings the database.
 
-Startup also reconciles all ten Phase II MongoDB views through `server/insights.js`; view-installation errors stop startup. Public `GET /api/insights/:id` serves views 1–3 and 5–10, and admin-only `GET /api/admin/insights/4` serves the integrity view. Both use bounded, validated database search/filter/sort/pagination and chart facets with a five-second query limit. See [analytical view contracts, semantics and tests](ANALYTICAL_VIEWS.md). Explicit installation: `npm run db:apply-views`.
+Startup reconciles analytical views through `server/insights.js`; installation errors stop startup. Pipelines are defined in `server/analyticsViews.js`, and display metadata is in `shared/insights.js`. Run `npm run db:apply-views` to reconcile views manually.
 
 ## Endpoint inventory
 
@@ -28,6 +26,8 @@ Authenticated routes require a server session with `user.oid`. Review mutations 
 | POST `/api/auth/google/exchange` | Matching initiating session | `{code,state,redirect_uri,code_verifier}`; verifies/consumes the flow, then signs in or links according to the server-stored intent |
 | GET `/api/profile` | Authenticated | Safe profile, role, saved emails, Google display details and account kinds |
 | GET `/api/admin/overview` | Admin only | Counts of users, reviews and cached music; the entire `/api/admin` namespace is protected |
+| GET `/api/insights/:id` | Public | Analytical views 1–3 and 5–10 |
+| GET `/api/admin/insights/4` | Admin only | User/review integrity view |
 | GET `/api/profile/export.csv` | Authenticated | Download own account, reviews and track ratings as UTF-8 CSV |
 | GET `/api/profile/export.pdf` | Authenticated | Download the same records as a paginated PDF |
 | DELETE `/api/profile` | Authenticated | `{confirmation:"DELETE"}`; permanently delete own account, reviews, ratings, media references and sessions |
@@ -60,6 +60,12 @@ identity cannot replace one already linked to the current user. Linking preserve
 the user's primary email, password and reviews and returns to Profile. Accounts
 are not merged. Normal Google sign-in resolves the stable provider UID first,
 retaining the linked user's primary email even when the Google email differs.
+
+## Analytical queries
+
+Analytical endpoints accept `q` (literal case-insensitive text, max 100 characters), `sort` (displayed column key), `direction` (`asc`/`desc`), `limit` (1–100, default 20), and `offset` (0–100000). View 5 also accepts `mediaType=album|song`; view 4 accepts `status=matched|user_without_review|review_without_user`.
+
+Responses contain `ok`, `items`, `total`, `offset`, nullable `nextOffset`, and `chart` label/value pairs. Charts and counts cover all matches independently of table pagination. Queries have a five-second timeout and disable response caching. Invalid parameters return 400, unknown/private views 404, and query failures 503. Admin routes additionally return 401/403 for missing or insufficient authorization.
 
 ## Review contract
 

@@ -1,6 +1,6 @@
 # HearSay frontend reference
 
-Reviewed November 17, 2026 against `hearsay/src`. React 19, React Router 7, Vite 7 and Tailwind 4 provide an SPA. `main.jsx` mounts StrictMode and AuthProvider; App adds ThemeProvider, ToastProvider, Router and Header. API access mixes direct fetch with config wrappers.
+React 19, React Router 7, Vite 7 and Tailwind 4 provide the SPA. `main.jsx` mounts StrictMode and AuthProvider; App adds ThemeProvider, ToastProvider, Router and Header.
 
 ## Routes
 
@@ -26,7 +26,7 @@ ProtectedRoute checks `/api/me` and redirects guests to `/auth`. Ordinary protec
 
 ## Review behavior and limits
 
-Discover/Community use a shared InsightsPanel with captioned HTML tables, database-side literal text search, allowlisted sorting, 20-row pagination, loading/empty/error/retry states and media/review links. Catalogue adds a song/album filter; admin adds a relationship-status filter. Views 6/7/8/10 have accessible HTML/CSS bar charts computed from up to ten matching database results independently of table pagination. Navigation includes desktop/mobile links and home/Recent Reviews entry points. See [analytical view semantics and validation](ANALYTICAL_VIEWS.md).
+Discover and Community use `InsightsPanel` for searchable, sortable, paginated tables and charts. The catalogue filters by media type; admin integrity filters by relationship status. Category metadata is defined in `shared/insights.js`; query parameters are documented in the [backend reference](BACKEND_REFERENCE.md#analytical-queries).
 
 Headphone controls use half-star increments. Most forms enforce 1,000 words; client sanitizeInput additionally caps text at 5,000 characters and strips selected markup patterns. The server uses word count instead. Stored ratings are doubled; API responses use stars. Zero means unrated.
 
@@ -61,8 +61,8 @@ From `hearsay`: npm ci; npm run dev:all; npm run build; npm run lint. Separate w
 
 ## UI and errors
 
-Light/dark rendering uses Tailwind 4's explicit class-based dark variant and theme-specific variables in `src/index.css`, following the saved choice rather than OS preference. Auth uses App's shared header; input labels target IDs; Profile exposes a main landmark; the skip link targets focusable `maincontent`; mobile navigation exposes expanded/controls state. See the [Docker Playwright MCP light/dark review](UI_REVIEW.md) for findings, coverage and limits.
+Light/dark mode uses Tailwind's class-based dark variant and CSS variables in `src/index.css`. ThemeContext persists the user's choice in localStorage. The skip link targets `maincontent`; Header manages desktop/mobile navigation and menu expanded state.
 
-ThemeContext persists light/dark mode through an HTML class. Provider components live in `context/ThemeContext.jsx`, `context/ToastContext.jsx` and `contexts/AuthContext.jsx`; shared context objects/hooks live in their adjacent `theme.js`, `toast.js` and `auth.js` modules so Fast Refresh can track component-only exports. Profile changes refresh the shared auth cache and header immediately. Tailwind supplies responsive layouts, and Header provides mobile navigation. Components use a mix of toasts, alerts, loading indicators and inline errors. Semantic HTML, ARIA labels and keyboard handlers appear in the interface; this reference does not certify accessibility compliance.
+Provider components live in `context/ThemeContext.jsx`, `context/ToastContext.jsx` and `contexts/AuthContext.jsx`; their context objects and hooks live in adjacent `theme.js`, `toast.js` and `auth.js` modules for Fast Refresh. Components display loading indicators, inline errors, alerts and toasts.
 
-Keyword music search queries Spotify. Recent-review type filtering queries MongoDB.
+Keyword music search queries Spotify. Catalogue search and analytical filters query MongoDB.
