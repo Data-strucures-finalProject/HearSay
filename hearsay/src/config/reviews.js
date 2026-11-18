@@ -33,6 +33,7 @@ export async function upsertReview({ type, oid, rating, text, trackRatings }) {
   if (typeof text !== 'undefined') payload.text = text;
   if (typeof trackRatings !== 'undefined') payload.trackRatings = trackRatings;
   const { review } = await apiJson('POST', '/reviews/upsert', payload);
+  window.dispatchEvent(new CustomEvent('hearsay-review-change', { detail: { type, oid, source: 'composer' } }));
   return review;
 }
 
@@ -50,6 +51,7 @@ export async function getMyReview(type, oid) {
 export async function deleteMyReview(type, oid) {
   const path = `/reviews/my?type=${encodeURIComponent(type)}&oid=${encodeURIComponent(oid)}`;
   const data = await apiJson('DELETE', path);
+  window.dispatchEvent(new CustomEvent('hearsay-review-change', { detail: { type, oid, source: 'composer' } }));
   return Boolean(data.deleted);
 }
 

@@ -4,6 +4,9 @@ import { getSpotifyAlbum } from '../config/spotify';
 import { upsertReview, getMyReview, deleteMyReview } from '../config/reviews';
 import { useTheme } from '../context/theme';
 import HeadphoneRating from './HeadphoneRating';
+import DiscussionSection from './DiscussionSection';
+import { useDiscussionSync } from '../config/discussionSync';
+import './MediaDetailLayout.css';
 import { useToast } from '../context/toast';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 
@@ -25,6 +28,11 @@ export default function AlbumRatingPage() {
   const [hasSavedReview, setHasSavedReview] = useState(false);
   const [hasSavedRating, setHasSavedRating] = useState(false);
   const { success } = useToast();
+  useDiscussionSync('album', albumId, existing => {
+    setReview(existing?.text || ''); setAlbumRating(existing?.rating || 0);
+    setHasSavedReview(!!existing?.text?.trim()); setHasSavedRating(existing?.rating > 0);
+    setIsEditingReview(false); setIsEditingRating(false);
+  });
 
   // Calculate word count
   const wordCount = review.trim().split(/\s+/).filter(word => word.length > 0).length;
@@ -305,9 +313,9 @@ export default function AlbumRatingPage() {
           <div className="text-xl text-black dark:text-white">Loading album details...</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="media-detail-layout">
           {/* Cover Art and Info */}
-          <div className="lg:col-span-4">
+          <div>
             <div className="aspect-square border-2 border-black dark:border-white bg-white dark:bg-gray-900 mb-4">
               {album?.coverArt && (
                 <img src={album.coverArt} alt={album.title} className="w-full h-full object-cover" />
@@ -325,7 +333,7 @@ export default function AlbumRatingPage() {
           </div>
 
           {/* Middle Column - Player, Review, Album Rating */}
-          <div className="lg:col-span-5">
+          <div>
             {/* Embedded Player */}
             <div className="border-2 border-black dark:border-white overflow-hidden mb-4" style={{ backgroundColor: theme === 'dark' ? '#121212' : '#ffffff' }}>
               <iframe
@@ -444,55 +452,49 @@ export default function AlbumRatingPage() {
           </div>
 
           {/* Track List */}
-          <div className="lg:col-span-3">
-            <div className="border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white flex flex-col" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
+          <div>
+            <div className="album-track-list border-2 border-black dark:border-white bg-white dark:bg-gray-900 text-black dark:text-white">
               <h2 className="font-semibold p-4 pb-2 border-b-2 border-black dark:border-white">
                 <span className="text-black dark:text-white">Track List</span>
               </h2>
-              {/* Reduced padding so track rows have more horizontal room */}
-              <div className="overflow-y-auto p-1 pt-1 flex-1">
+              <div className="album-track-list__rows" tabIndex={0} role="region" aria-label="Album tracks">
                 <div className="space-y-1">
                   {tracks.map((track) => (
                     <div
                       key={track.id}
-                      /* single column on mobile so elements stack; compact 3-col on sm+ */
-                      className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto] items-start gap-x-2 gap-y-2 py-3 sm:py-1 border-b border-black dark:border-white last:border-0 min-h-[4.25rem] sm:min-h-0"
+                      className="album-track-list__row border-b border-black dark:border-white last:border-0"
                     >
                       {/* Track number */}
-                      <div className="text-right text-gray-500 dark:text-gray-400 text-sm pr-1 pl-2 sm:order-1">
+                      <div className="text-right text-gray-600 dark:text-gray-400 text-sm">
                         {track.trackNumber}
                       </div>
 
-                      {/* Title and rating stacked */}
-                      <div className="min-w-0 pl-3 sm:order-2 flex flex-col">
+                      <div className="min-w-0">
                         <Link
                           to={`/song/${track.id}`}
                           className="block text-sm text-black dark:text-white hover:underline whitespace-normal break-words mb-1"
                         >
                           {track.name}
                         </Link>
-                        <div>
-                          <HeadphoneRating
-                            size="small"
-                            value={trackRatings[track.id] || 0}
-                            onChange={(rating) => handleTrackRating(track.id, rating)}
-                            showBox={true}
-                            compact={true}
-                            /* stackOnSmall default for small size will stack icons above number if needed */
-                          />
-                        </div>
                       </div>
-
-                      {/* Duration */}
-                      <div className="text-right text-gray-500 dark:text-gray-400 text-xs pr-1 sm:order-4">
+                      <div className="text-right text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
                         {formatDuration(track.duration)}
+                      </div>
+                      <div className="album-track-list__rating">
+                        <HeadphoneRating
+                          size="small"
+                          value={trackRatings[track.id] || 0}
+                          onChange={(rating) => handleTrackRating(track.id, rating)}
+                          showBox={true}
+                          compact={true}
+                        />
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
               {/* Submit Rating Button */}
-              <div className="p-4 border-t-2 border-black dark:border-white">
+              <div className="album-track-list__submit p-4 border-t-2 border-black dark:border-white">
                 <button
                   onClick={handleSubmitRatings}
                   className="w-full border-2 border-black dark:border-white py-2 hover:bg-gray-100 dark:hover:bg-gray-800 bg-white dark:bg-gray-900 text-black dark:text-white transition-colors"
@@ -505,6 +507,7 @@ export default function AlbumRatingPage() {
         </div>
       )}
 
+      <DiscussionSection type="album" oid={albumId} />
       {/* Related Albums */}
       <div className="mt-12">
         <h2 className="text-xl font-semibold mb-4">

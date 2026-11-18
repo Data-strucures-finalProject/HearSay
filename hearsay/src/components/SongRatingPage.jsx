@@ -3,6 +3,9 @@ import { useParams } from 'react-router-dom';
 import { useTheme } from '../context/theme';
 import { useToast } from '../context/toast';
 import HeadphoneRating from './HeadphoneRating';
+import DiscussionSection from './DiscussionSection';
+import { useDiscussionSync, notifyReviewChange } from '../config/discussionSync';
+import './MediaDetailLayout.css';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 
 const SONG_REVIEW_WORD_LIMIT = 1000;
@@ -23,6 +26,11 @@ export default function SongRatingPage() {
   const [hasSavedRating, setHasSavedRating] = useState(false);
   const [savingRating, setSavingRating] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  useDiscussionSync('song', songId, existing => {
+    setReview(existing?.text || ''); setRating(existing?.rating || 0);
+    setHasSavedReview(!!existing?.text?.trim()); setHasSavedRating(existing?.rating > 0);
+    setIsEditingReview(false); setIsEditingRating(false);
+  });
 
   // Calculate word count
   const wordCount = review.trim().length ? review.trim().split(/\s+/).filter(word => word.length > 0).length : 0;
@@ -141,6 +149,7 @@ export default function SongRatingPage() {
       setHasSavedRating(true);
       setIsEditingRating(false);
       success?.('Rating saved');
+      notifyReviewChange('song', songId);
     } catch (e) {
       console.error('Submit rating failed', e);
       setSaveError('Network error while saving rating');
@@ -177,6 +186,7 @@ export default function SongRatingPage() {
       setHasSavedReview(true);
       setIsEditingReview(false);
       success?.('Review saved');
+      notifyReviewChange('song', songId);
     } catch (e) {
       console.error('Submit review failed', e);
       alert('Network error while saving review');
@@ -220,9 +230,9 @@ export default function SongRatingPage() {
 
   return (
     <main className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="media-detail-layout">
         {/* Left: Cover Art and Info */}
-        <div className="lg:col-span-4">
+        <div>
           <div className="aspect-square border-2 border-black dark:border-white bg-white dark:bg-gray-900 mb-4">
             {song?.coverArt ? (
               <img src={song.coverArt} alt={song.title} className="w-full h-full object-cover" />
@@ -239,7 +249,7 @@ export default function SongRatingPage() {
         </div>
 
         {/* Middle Column - Player and Review */}
-        <div className="lg:col-span-5">
+        <div>
           <div className="border-2 border-black dark:border-white overflow-hidden mb-4" style={{ backgroundColor: theme === 'dark' ? '#121212' : '#ffffff' }}>
             <iframe
               key={song?.id}
@@ -314,7 +324,7 @@ export default function SongRatingPage() {
         </div>
 
         {/* Right: Rating */}
-        <div className="lg:col-span-3">
+        <div>
           <div className="border-2 border-black dark:border-white p-4 bg-white dark:bg-gray-900 text-black dark:text-white">
             <h2 className="font-semibold mb-4"><span className="text-black dark:text-white">Rating</span></h2>
 
@@ -352,6 +362,7 @@ export default function SongRatingPage() {
           </div>
         </div>
       </div>
+      <DiscussionSection type="song" oid={songId} />
     </main>
   );
 }

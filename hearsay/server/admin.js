@@ -10,7 +10,7 @@ export async function initializeDefaultAdmin(database, env = process.env) {
   if (await users.findOne({ isDefaultAdmin: true })) return { created: false };
   const email = normalizeAddress(env.DEFAULT_ADMIN_EMAIL || 'admin@hearsay.com');
   const password = env.DEFAULT_ADMIN_PASSWORD || 'password';
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || typeof password !== 'string' || password.length < 6) {
+  if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || typeof password !== 'string' || password.length < 6) {
     throw new Error('Default admin configuration requires a valid email and a password of at least six characters.');
   }
   if (await users.findOne(emailOwnerFilter(email))) {
@@ -19,7 +19,7 @@ export async function initializeDefaultAdmin(database, env = process.env) {
   }
   const now = new Date().toISOString();
   try {
-    await users.insertOne({ email, loginEmails: [email], emailHistory: [email], firstname: 'HearSay', lastname: 'Admin', accounts: [{ kind: 'Local', uid: email }], passwordHash: await bcrypt.hash(password, parseInt(env.BCRYPT_ROUNDS || '12', 10) || 12), role: 'admin', isDefaultAdmin: true, createdAt: now, updatedAt: now });
+    await users.insertOne({ email, loginEmails: [email], emailHistory: [email], reviewIds: [], firstname: 'HearSay', lastname: 'Admin', accounts: [{ kind: 'Local', uid: email }], passwordHash: await bcrypt.hash(password, parseInt(env.BCRYPT_ROUNDS || '12', 10) || 12), role: 'admin', isDefaultAdmin: true, createdAt: now, updatedAt: now });
     return { created: true };
   } catch (error) {
     if (error.code === 11000 && await users.findOne({ isDefaultAdmin: true })) return { created: false };
@@ -40,8 +40,9 @@ export function mountAdminRoutes(app, database) {
   app.get('/api/admin/overview', async (_req, res) => {
     try {
       const collections = ['users', 'reviews', 'artists', 'albums', 'songs'];
-      const counts = await Promise.all(collections.map(name => database.collection(name).countDocuments()));
-      res.set('Cache-Control', 'no-store').json({ ok: true, counts: Object.fromEntries(collections.map((name, i) => [name, counts[i]])) });
+      const counts = await Promise.all(collections.map(name => database.collection(name).countDocuments(name === 'reviews' ? { 'item.type': { $in: ['song', 'album', 'artist'] } } : {})));
+      const comments = await database.collection('reviews').countDocuments({ 'item.type': 'review', deleted: { $ne: true } });
+      res.set('Cache-Control', 'no-store').json({ ok: true, counts: { ...Object.fromEntries(collections.map((name, i) => [name, counts[i]])), comments } });
     } catch { res.status(503).json({ ok: false, error: 'admin_unavailable' }); }
   });
 }

@@ -1,0 +1,32 @@
+{
+  "chart": "Billboard 200",
+  "chartDate": "2026-11-14",
+  "source": "https://ca.billboard.com/charts/billboard-200/2026-11-14",
+  "albums": [
+    { "rank": 1, "title": "you seem pretty sad for a girl so in love", "artist": "Olivia Rodrigo" },
+    { "rank": 2, "title": "Thriller", "artist": "Michael Jackson" },
+    { "rank": 3, "title": "I'm The Problem", "artist": "Morgan Wallen" },
+    { "rank": 4, "title": "Dandelion", "artist": "Ella Langley" },
+    { "rank": 5, "title": "The Great Divide", "artist": "Noah Kahan" },
+    { "rank": 6, "title": "BREAK EVEN (EP)", "artist": "ILLIT" },
+    { "rank": 7, "title": "BETTER OVER TIME", "artist": "BigXthaPlug" },
+    { "rank": 8, "title": "Stick Season", "artist": "Noah Kahan" },
+    { "rank": 9, "title": "The Life Of A Showgirl", "artist": "Taylor Swift" },
+    { "rank": 10, "title": "Perfecth", "artist": "Queens Of The Stone Age" },
+    { "rank": 11, "title": "SOS", "artist": "SZA" },
+    { "rank": 12, "title": "The Art Of Loving", "artist": "Olivia Dean" },
+    { "rank": 13, "title": "One Thing At A Time", "artist": "Morgan Wallen" },
+    { "rank": 14, "title": "HABIBTI", "artist": "Drake" },
+    { "rank": 15, "title": "ICEMAN", "artist": "Drake" },
+    { "rank": 16, "title": "Number Ones", "artist": "Michael Jackson" },
+    { "rank": 17, "title": "The Black Parade", "artist": "My Chemical Romance" },
+    { "rank": 18, "title": "Young Manhood And Other Donatable Organs", "artist": "Zach Bryan" },
+    { "rank": 19, "title": "PRIMA", "artist": "ADELA" },
+    { "rank": 20, "title": "Take Care", "artist": "Drake", "searchTitle": "Take Care (Deluxe)", "editionNote": "Spotify's available 19-track deluxe edition" },
+    { "rank": 21, "title": "Visitor", "artist": "Sienna Spiro" },
+    { "rank": 22, "title": "So Close To What", "artist": "Tate McRae" },
+    { "rank": 23, "title": "Debi Tirar Mas Fotos", "artist": "Bad Bunny" },
+    { "rank": 24, "title": "Dangerous: The Double Album", "artist": "Morgan Wallen" },
+    { "rank": 25, "title": "Tim Burton's The Nightmare Before Christmas", "artist": "Soundtrack", "searchTitle": "The Nightmare Before Christmas", "spotifyAlbumId": "6GK3BoRpWxUXV9xPQMYJdc" }
+  ]
+}

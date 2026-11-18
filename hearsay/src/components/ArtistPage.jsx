@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { getSpotifyArtist, getSpotifyArtistAlbums, getSpotifyAlbums, getSavedArtist } from '../config/spotify';
 import { upsertReview, getMyReview, deleteMyReview } from '../config/reviews';
 import HeadphoneRating from './HeadphoneRating';
+import DiscussionSection from './DiscussionSection';
+import { useDiscussionSync } from '../config/discussionSync';
 import { sanitizeInput, sanitizeRating } from '../utils/sanitize';
 
 export default function ArtistPage() {
@@ -23,6 +25,11 @@ export default function ArtistPage() {
   const [hasSavedReview, setHasSavedReview] = useState(false);
   const [hasSavedRating, setHasSavedRating] = useState(false);
   const ARTIST_REVIEW_WORD_LIMIT = 1000;
+  useDiscussionSync('artist', artistId, existing => {
+    setReviewText(existing?.text || ''); setArtistRating(existing?.rating || 0);
+    setHasSavedReview(!!existing?.text?.trim()); setHasSavedRating(existing?.rating > 0);
+    setIsEditingReview(false); setIsEditingRating(false);
+  });
 
   useEffect(() => {
     const fetchArtistData = async () => {
@@ -509,6 +516,7 @@ export default function ArtistPage() {
           )}
         </div>
       </div>
+      <DiscussionSection type="artist" oid={artistId} />
     </main>
   );
 }

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* Your custom CSS below */
 :root {
@@ -7,8 +8,24 @@
     --muted: #6b7280;
     --card: #ffffff;
     --border: #e5e7eb;
-    --accent: #b7791f;
+    --accent: #87500a;
     --btn-text: #ffffff;
+    --success: #15803d;
+    --danger: #b91c1c;
+    color-scheme: light;
+}
+
+:root.dark {
+    --bg: #111827;
+    --text: #f9fafb;
+    --muted: #cbd5e1;
+    --card: #111827;
+    --border: #cbd5e1;
+    --accent: #fbbf24;
+    --btn-text: #111827;
+    --success: #86efac;
+    --danger: #fca5a5;
+    color-scheme: dark;
 }
 
 body {
@@ -54,6 +71,10 @@ h1, h2, h3 { color: var(--text); }
 h2.accent { color: var(--accent); }
 
 .muted { color: var(--muted); }
+.text-green-600 { color: var(--success); }
+.text-red-600 { color: var(--danger); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
+.dark input::placeholder, .dark textarea::placeholder { color: var(--muted); }
 
 .dark .bg-white { background-color: var(--card) !important; }
 .dark .text-black { color: var(--text) !important; }

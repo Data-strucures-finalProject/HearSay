@@ -1,4 +1,6 @@
 db/data/*
+db/backups/
+db/local-demo/
 .env
 .env.*
 !.env.example
