@@ -1,6 +1,8 @@
 # HearSay
 
-HearSay is a music discovery and review app using React, Vite, Express and the native MongoDB driver. Users browse Spotify music and manage song, album and artist reviews.
+HearSay is a music discovery and review app using React, Vite, Express and the native MongoDB driver. Users browse Spotify music, review songs/albums/artists, vote on reviews and discuss them in collapsible reply threads.
+
+Discover and Community provide searchable music and review tables with charts. Popular on Spotify ranks stored artists by follower count. Admin provides a protected user/review integrity table.
 
 ## Documentation
 
@@ -8,6 +10,7 @@ HearSay is a music discovery and review app using React, Vite, Express and the n
 - [Frontend routes and behavior](docs/FRONTEND_REFERENCE.md)
 - [Architecture and diagrams](docs/ARCHITECTURE.md)
 - [Database setup, import/export and backups](db/mongo-cli.md)
+- [Developer tests](scripts/tests/README.md)
 
 ## Prerequisites
 
@@ -32,11 +35,13 @@ Open http://localhost:8080. The backend is exposed on port 5174. Frontend Nginx 
 
 The backend applies validators before starting. Sample-data import is a separate operation. Data persists in `db/data`. `docker compose down` stops containers without deleting that directory.
 
+Backend startup installs the analytical MongoDB views. Database credentials need create-view and `collMod` permissions; see [database setup](db/mongo-cli.md).
+
 Frontend configuration is embedded at build time. The Dockerfile forwards the Google client ID and redirect URI build arguments. AuthPage and review clients default to same-origin `/api`; see the frontend reference for optional overrides.
 
-Profile supports local passwords, Google linking, independent choices to copy Google names/email, and saved login email management. Removing the Google email also disconnects Google sign-in. Startup applies MongoDB validators and initializes legacy email aliases; active aliases have a unique index. See the backend reference for fields and routes.
+Profile supports local passwords, Google linking, independent choices to copy Google names/email, and saved login email management. Removing the Google email also disconnects Google sign-in. Startup preflights and applies strict MongoDB validators; active aliases and cached Spotify identities have unique indexes. See the backend reference for fields, routes and legacy-schema upgrade commands.
 
-Profile also offers CSV and PDF downloads of account details, reviews and ratings, plus permanent account deletion with an explicit confirmation. Exports exclude credentials. Deletion removes owned data and sessions while preserving shared music metadata and other users' data.
+Profile also offers CSV and PDF downloads of account details, reviews, comments and ratings, plus permanent account deletion with an explicit confirmation. Exports exclude credentials. Deletion removes owned review threads, votes and sessions, and anonymizes comments within other users' threads. Shared music metadata remains.
 
 Set `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `.env` to initialize the default admin once (defaults: `admin@hearsay.com` / `password`). Existing default-admin credentials are never reset on restart. Use a stronger initial password before public deployment. Only administrators see the Admin tab; the backend also enforces the admin role on its API.
 
@@ -67,8 +72,11 @@ From `hearsay`:
 ```powershell
 npm run build
 npm run lint
+npm run db:validate
 ```
 
 Build output is `dist/`. `npm run preview` has no configured API proxy and is not the complete deployment. `npm run start:backend` uses production mode; supply `.env.production` or process variables and serve the frontend behind an `/api` proxy.
+
+`db:validate` checks the configured database without modifying it and exits nonzero on schema or reference errors. Demo seed/credential storage and Docker validation commands are documented in [database setup](db/mongo-cli.md#demo-seed).
 
 Optional developer tests live in [scripts/tests](scripts/tests/README.md). Run `.\scripts\tests\run.cmd --setup` from PowerShell or Command Prompt to install temporary Docker test tools and run everything. Select individual suites with `run.cmd runtime`, `run.cmd browser` or `run.cmd admin` from that folder.

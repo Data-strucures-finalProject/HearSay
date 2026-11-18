@@ -16,6 +16,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import RecentReviewsPage from './components/RecentReviewsPage';
 import ReviewPage from './components/ReviewPage';
 import AdminPage from './components/AdminPage';
+import InsightsPage from './components/InsightsPage';
 import './App.css';
 
 function App() {
@@ -25,7 +26,7 @@ function App() {
         <Router>
           <div className="min-h-screen bg-white dark:bg-gray-900">
             <Header />
-            <div className="pt-20">
+            <div id="maincontent" tabIndex={-1} className="pt-20 md:pt-32">
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/auth" element={<AuthPage />} />
@@ -40,6 +41,8 @@ function App() {
                 <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
                 <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminPage /></ProtectedRoute>} />
                 <Route path="/random" element={<RandomPage />} />
+                <Route path="/discover" element={<InsightsPage group="discover" />} />
+                <Route path="/community" element={<InsightsPage group="community" />} />
               </Routes>
             </div>
           </div>

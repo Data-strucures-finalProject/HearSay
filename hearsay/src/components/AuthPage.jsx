@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from './Header';
 import { emitAuthChange } from '../utils/authBus';
 import { startGoogleAuth } from '../utils/googleAuth';
 
@@ -74,8 +73,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-gray-900 pt-16">
-      <Header />
+    <div className="bg-white dark:bg-gray-900">
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-md mx-auto">
@@ -113,8 +111,9 @@ export default function AuthPage() {
 
             <form onSubmit={handleLocalSubmit} className="space-y-4">
               <div>
-                <label className="block mb-2 text-black dark:text-white">Email</label>
+                <label htmlFor="auth-email" className="block mb-2 text-black dark:text-white">Email</label>
                 <input
+                  id="auth-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -125,8 +124,9 @@ export default function AuthPage() {
               </div>
 
               <div>
-                <label className="block mb-2 text-black dark:text-white">Password</label>
+                <label htmlFor="auth-password" className="block mb-2 text-black dark:text-white">Password</label>
                 <input
+                  id="auth-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -138,8 +138,9 @@ export default function AuthPage() {
 
               {mode === 'signup' && (
                 <div>
-                  <label className="block mb-2 text-black dark:text-white">Confirm Password</label>
+                  <label htmlFor="auth-confirm" className="block mb-2 text-black dark:text-white">Confirm Password</label>
                   <input
+                    id="auth-confirm"
                     type="password"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}

@@ -264,7 +264,7 @@ export default function SearchPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold truncate text-black dark:text-white text-sm sm:text-base">{track.title}</p>
                   <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">{track.artist}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-500 truncate">{track.album}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{track.album}</p>
                 </div>
                 <div className="text-gray-600 dark:text-gray-400 text-xs sm:text-sm">
                   {formatDuration(track.duration)}

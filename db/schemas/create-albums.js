@@ -1,56 +1,320 @@
+// Generated from schema-HearSay-Albums.json; run npm run db:sync-schema-scripts to update.
 use("hearsay");
 
 db.createCollection("albums", {
   validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: [
-        "_id", "artist", "dislikes", "genre", "image", "likes", "name",
-        "releaseDate", "reviews", "songs", "spotifyAlbumId"
-      ],
-      properties: {
-        _id: { bsonType: "objectId" },
-        name: { bsonType: "string" },
-        image: { bsonType: "string" },
-        genre: { bsonType: "array" },
-        likes: { bsonType: ["int", "long", "double", "string"] },
-        dislikes: { bsonType: ["int", "long", "double", "string"] },
-        rating: { bsonType: ["double", "int", "long", "string"] },
-        releaseDate: { bsonType: "string" },
-        spotifyAlbumId: { bsonType: "string" },
-        artist: {
-          bsonType: "object",
-          required: ["name", "oid"],
-          properties: {
-            name: { bsonType: "string" },
-            oid: { bsonType: "string" }
-          }
-        },
-        songs: {
-          bsonType: "array",
-          items: {
-            bsonType: "object",
-            required: ["name", "oid"],
-            properties: {
-              name: { bsonType: "string" },
-              oid: { bsonType: "string" }
+    "$and": [
+      {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "name",
+            "artist",
+            "likes",
+            "dislikes",
+            "rating",
+            "image",
+            "reviews",
+            "genre",
+            "releaseDate",
+            "songs",
+            "spotifyAlbumId"
+          ],
+          "properties": {
+            "_id": {
+              "bsonType": "objectId"
+            },
+            "name": {
+              "bsonType": "string",
+              "minLength": 1
+            },
+            "likes": {
+              "bsonType": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "dislikes": {
+              "bsonType": "string",
+              "pattern": "^(0|[1-9][0-9]*)$"
+            },
+            "rating": {
+              "bsonType": "string",
+              "pattern": "^([0-4](\\.[0-9]+)?|5(\\.0+)?)$"
+            },
+            "image": {
+              "bsonType": "string",
+              "pattern": "^$|^https?://"
+            },
+            "reviews": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "review_oid",
+                  "user_oid"
+                ],
+                "properties": {
+                  "review_oid": {
+                    "bsonType": "string",
+                    "pattern": "^[a-fA-F0-9]{24}$"
+                  },
+                  "user_oid": {
+                    "bsonType": "string",
+                    "pattern": "^[a-fA-F0-9]{24}$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "uniqueItems": true
+            },
+            "createdAt": {
+              "bsonType": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$"
+            },
+            "updatedAt": {
+              "bsonType": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$"
+            },
+            "artist": {
+              "bsonType": "object",
+              "required": [
+                "name",
+                "oid"
+              ],
+              "properties": {
+                "name": {
+                  "bsonType": "string"
+                },
+                "oid": {
+                  "bsonType": "string",
+                  "pattern": "^([A-Za-z0-9-]{1,64})?$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "genre": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "string"
+              },
+              "uniqueItems": true
+            },
+            "releaseDate": {
+              "bsonType": "string",
+              "pattern": "^$|^\\d{4}(-\\d{2}(-\\d{2})?)?$"
+            },
+            "songs": {
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "name",
+                  "oid"
+                ],
+                "properties": {
+                  "name": {
+                    "bsonType": "string"
+                  },
+                  "oid": {
+                    "bsonType": "string",
+                    "pattern": "^([A-Za-z0-9-]{1,64})?$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "uniqueItems": true
+            },
+            "spotifyAlbumId": {
+              "bsonType": "string",
+              "pattern": "^[A-Za-z0-9-]{1,64}$"
             }
-          }
-        },
-        reviews: {
-          bsonType: "array",
-          items: {
-            bsonType: "object",
-            required: ["review_oid", "user_oid"],
-            properties: {
-              review_oid: { bsonType: "string" },
-              user_oid: { bsonType: "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      {
+        "$expr": {
+          "$and": [
+            {
+              "$let": {
+                "vars": {
+                  "values": {
+                    "$map": {
+                      "input": {
+                        "$cond": [
+                          {
+                            "$isArray": "$reviews"
+                          },
+                          "$reviews",
+                          []
+                        ]
+                      },
+                      "as": "entry",
+                      "in": "$$entry.review_oid"
+                    }
+                  }
+                },
+                "in": {
+                  "$eq": [
+                    {
+                      "$size": "$$values"
+                    },
+                    {
+                      "$size": {
+                        "$setUnion": [
+                          "$$values",
+                          []
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "$let": {
+                "vars": {
+                  "values": {
+                    "$map": {
+                      "input": {
+                        "$cond": [
+                          {
+                            "$isArray": "$songs"
+                          },
+                          "$songs",
+                          []
+                        ]
+                      },
+                      "as": "entry",
+                      "in": "$$entry.oid"
+                    }
+                  }
+                },
+                "in": {
+                  "$eq": [
+                    {
+                      "$size": "$$values"
+                    },
+                    {
+                      "$size": {
+                        "$setUnion": [
+                          "$$values",
+                          []
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
             }
-          }
+          ]
+        }
+      },
+      {
+        "$expr": {
+          "$and": [
+            {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$type": "$createdAt"
+                    },
+                    "missing"
+                  ]
+                },
+                {
+                  "$ne": [
+                    {
+                      "$convert": {
+                        "input": "$createdAt",
+                        "to": "date",
+                        "onError": null,
+                        "onNull": null
+                      }
+                    },
+                    null
+                  ]
+                }
+              ]
+            },
+            {
+              "$or": [
+                {
+                  "$eq": [
+                    {
+                      "$type": "$updatedAt"
+                    },
+                    "missing"
+                  ]
+                },
+                {
+                  "$ne": [
+                    {
+                      "$convert": {
+                        "input": "$updatedAt",
+                        "to": "date",
+                        "onError": null,
+                        "onNull": null
+                      }
+                    },
+                    null
+                  ]
+                }
+              ]
+            },
+            {
+              "$cond": [
+                {
+                  "$and": [
+                    {
+                      "$ne": [
+                        {
+                          "$type": "$createdAt"
+                        },
+                        "missing"
+                      ]
+                    },
+                    {
+                      "$ne": [
+                        {
+                          "$type": "$updatedAt"
+                        },
+                        "missing"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "$gte": [
+                    {
+                      "$convert": {
+                        "input": "$updatedAt",
+                        "to": "date",
+                        "onError": null,
+                        "onNull": null
+                      }
+                    },
+                    {
+                      "$convert": {
+                        "input": "$createdAt",
+                        "to": "date",
+                        "onError": null,
+                        "onNull": null
+                      }
+                    }
+                  ]
+                },
+                true
+              ]
+            }
+          ]
         }
       }
-    }
+    ]
   },
-  validationLevel: "moderate",
+  validationLevel: "strict",
   validationAction: "error"
 });
+
+db.albums.createIndex({ spotifyAlbumId: 1 }, { unique: true, name: 'uniq_spotify_album' });

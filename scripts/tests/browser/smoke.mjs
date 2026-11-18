@@ -3,6 +3,7 @@
 import { chromium } from '/tmp/hearsay-browser/node_modules/playwright/index.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { exerciseRatingLayout } from './rating-layout.mjs';
 
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-browser', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -37,7 +38,7 @@ try {
   results.push({ check: 'mobile menu', expandedMenuCount: await page.locator('#mobile-menu').count(), horizontalOverflow: await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth) });
   await page.screenshot({ path: '/tmp/hearsay-audit-mobile.png', fullPage: true });
   // A fixture lets the browser verify ReviewPage without editing real reviews.
-  await page.route('**/api/reviews/000000000000000000000001', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, review: { id: '000000000000000000000001', type: 'song', oid: 'audit-track', rating: 4, text: 'Original review', userName: 'Audit User', canEdit: true, media: { title: 'Audit Song', route: '/song/audit-track' } } }) }));
+  await page.route('**/api/reviews/000000000000000000000001', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, review: { id: '000000000000000000000001', type: 'song', oid: 'audit-track', rating: 4, text: 'Original review', userName: 'Audit User', canEdit: true, media: { title: 'Audit Song', route: '/song/audit-track', album: { name: 'Audit Album', route: '/album/audit-album' }, artists: [{ name: 'Audit Artist', route: '/artist/audit-artist' }] } } }) }));
   await page.route('**/api/reviews/upsert', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, review: { _id: '000000000000000000000001', item: { type: 'song', oid: 'audit-track' }, user: { oid: 'audit-user' }, rating: 4, text: 'Updated review' } }) }));
   await page.goto('http://frontend/review/000000000000000000000001');
   await page.waitForTimeout(300);
@@ -55,6 +56,15 @@ try {
   await page.waitForTimeout(200);
   assert.equal(await page.getByRole('button', { name: /Edit/i }).count(), 1);
   await page.setViewportSize({ width: 1440, height: 900 });
+  for (const [name, target] of [['Audit Song', '/song/audit-track'], ['Audit Album', '/album/audit-album'], ['Audit Artist', '/artist/audit-artist']]) {
+    await page.goto('http://frontend/review/000000000000000000000001');
+    const link = page.getByRole('link', { name, exact: true });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('href'), target);
+    await link.click();
+    await page.waitForURL('http://frontend' + target);
+  }
+  results.push({ check: 'review links to song, album and artist', navigationPassed: true });
   await page.route('**/api/reviews/my?*', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, review: null }) }));
   await page.route('**/api/spotify/album/audit-album', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: { id: 'audit-album', name: 'Audit Album', artists: [{ name: 'Audit Artist' }], images: [], tracks: { items: [{ id: 'audit-track', name: 'Audit Track', duration_ms: 1000, track_number: 1 }] } } }) }));
   const submissions = [];
@@ -103,6 +113,11 @@ try {
   assert.equal(await page.getByRole('alert').count(), 3);
   results.push({ check: 'visible fetch failures', searchAlert: true, recentReviewAlerts: 3 });
   assert.deepEqual(failures, []);
+  const layoutContext = await browser.newContext();
+  try {
+    const layouts = await exerciseRatingLayout(await layoutContext.newPage(), 'http://frontend');
+    results.push({ check: 'rating and track-list layout', combinations: layouts.length, noHorizontalScroll: true, halfStars: true, keyboard: true, finalTrackReachable: true });
+  } finally { await layoutContext.close(); }
   console.log(JSON.stringify({ results, uncaughtErrors: failures }, null, 2));
 } finally {
   await browser.close();

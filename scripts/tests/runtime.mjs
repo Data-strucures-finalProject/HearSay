@@ -43,6 +43,7 @@ async function exchangeGoogle(code, intent = 'signin') {
 }
 try {
   await applySchemas();
+  execFileSync(process.execPath, ['server/scripts/sync-schema-scripts.mjs', '--check']);
   server = spawn(process.execPath, ['--import', './tests/fixtures/providers.mjs', 'server/index.js'], {
     env: { ...process.env, PORT: String(port), NODE_ENV: 'development', SESSION_COOKIE_SECURE: 'false', SPOTIFY_CLIENT_ID: 'audit-client', SPOTIFY_CLIENT_SECRET: 'audit-secret', GOOGLE_CLIENT_ID: 'audit-client', GOOGLE_CLIENT_SECRET: 'audit-secret' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -115,6 +116,7 @@ try {
   record('database ping', { status: (await request('/api/test')).status });
   record('guest profile denied', await request('/api/profile', { authenticated: false }));
   record('invalid signup email', await request('/api/auth/local/signup', { method: 'POST', body: { email: 'invalid', password: 'example-password' } }));
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'x'.repeat(250) + '@example.invalid', password: 'example-password' } })).status, 400);
   const email = 'reviewer@example.invalid';
   const signup = await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'example-password', role: 'admin', isDefaultAdmin: true } });
   assert.equal(signup.status, 200);
@@ -151,25 +153,65 @@ try {
   const songId = new ObjectId();
   const now = new Date().toISOString();
   await database.collection('artists').insertOne({ _id: artistId, name: 'Audit Artist', spotifyArtistId: 'audit-artist', createdAt: now, updatedAt: now, dislikes: '0', likes: '0', followers: 0, genres: ['audit'], image: '', popularity: 0, rating: '0', spotifyUrl: '', reviews: [], albums: [], songs: [] });
-  await database.collection('albums').insertOne({ _id: albumId, name: 'Audit Album', spotifyAlbumId: 'audit-album', artist: { name: 'Audit Artist', oid: String(artistId) }, dislikes: '0', likes: '0', genre: [], image: '', releaseDate: '2026', reviews: [], songs: [] });
+  await database.collection('albums').insertOne({ _id: albumId, name: 'Audit Album', spotifyAlbumId: 'audit-album', artist: { name: 'Audit Artist', oid: String(artistId) }, dislikes: '0', likes: '0', rating: '0', genre: [], image: '', releaseDate: '2026', reviews: [], songs: [] });
   await database.collection('songs').insertOne({ _id: songId, title: 'Audit Song', spotifyTrackID: 'audit-track', artist: { name: 'Audit Artist', oid: String(artistId), spotifyArtistId: 'audit-artist' }, album: { name: 'Audit Album', oid: String(albumId), spotifyAlbumId: 'audit-album' }, date: '2026', dislikes: '0', likes: '0', genres: ['audit'], image: '', rating: '0', reviews: [] });
   const reviewBody = { type: 'song', oid: 'audit-track', rating: 4, text: 'Audit review' };
   const created = await request('/api/reviews/upsert', { method: 'POST', body: reviewBody });
   assert.equal(created.status, 200);
   assert.equal(created.data.review.rating, 4);
+  const detail = await request(`/api/reviews/${created.data.review._id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.data.review.media.route, '/song/audit-track');
+  assert.deepEqual(detail.data.review.media.album, { name: 'Audit Album', route: '/album/audit-album' });
+  assert.deepEqual(detail.data.review.media.artists, [{ name: 'Audit Artist', route: '/artist/audit-artist' }]);
+  const { getReviewMedia } = await import('../server/reviewMedia.js');
+  const unavailableProvider = { getTrack() { throw new Error('Cached media must not require Spotify'); } };
+  assert.equal((await getReviewMedia(database, unavailableProvider, 'album', 'audit-album')).artists[0].route, '/artist/audit-artist');
+  assert.equal((await getReviewMedia(database, unavailableProvider, 'artist', 'audit-artist')).route, '/artist/audit-artist');
+  const fallback = await getReviewMedia(database, { getTrack: async () => ({ data: { id: 'uncached-song', name: 'Uncached song', artists: [{ id: 'artist-one', name: 'First artist' }, { id: 'artist-two', name: 'Second artist' }], album: { id: 'uncached-album', name: 'Uncached album' } } }) }, 'song', 'uncached-song');
+  assert.equal(fallback.album.route, '/album/uncached-album');
+  assert.deepEqual(fallback.artists.map(artist => artist.route), ['/artist/artist-one', '/artist/artist-two']);
+  record('review media navigation', { cachedSongAlbumArtist: true, internalReferencesResolved: true, spotifyFallbackCredits: true });
+  const { checkSchemaContracts } = await import('./schemas.mjs');
+  await checkSchemaContracts(database, await database.collection('reviews').findOne({ _id: new ObjectId(created.data.review._id) }));
   record('review create', { status: created.status, rating: created.data?.review?.rating });
   record('review read', { status: (await request('/api/reviews/my?type=song&oid=audit-track')).status });
   record('review update', { status: (await request('/api/reviews/upsert', { method: 'POST', body: { ...reviewBody, rating: 4.5 } })).status });
   record('review list', { count: (await request('/api/reviews/my/list')).data?.items?.length });
   record('guest mutation denied', await request('/api/reviews/upsert', { method: 'POST', body: reviewBody, authenticated: false }));
   record('long review rejected', await request('/api/reviews/upsert', { method: 'POST', body: { ...reviewBody, text: 'word '.repeat(1001) } }));
+  for (const invalid of [{ text: 'x'.repeat(8001) }, { text: { invalid: true } }, { oid: 'bad/id' }, { oid: 'x'.repeat(65) }, { type: 'album', trackRatings: { 'bad.key': 4 } }]) {
+    assert.equal((await request('/api/reviews/upsert', { method: 'POST', body: { ...reviewBody, ...invalid } })).status, 400);
+  }
   record('invalid media type rejected', await request('/api/reviews/upsert', { method: 'POST', body: { ...reviewBody, type: 'invalid' } }));
   const routeListing = await request('/api/debug/routes');
   assert.equal(routeListing.status, 200);
   assert.ok(routeListing.data.routes.some(route => route.path === '/api/reviews/upsert'));
   record('debug route listing', { status: routeListing.status });
   record('artist top songs endpoint', await request('/api/reviews/top-songs-for-artist?artistId=audit-artist'));
+  const { checkDiscussions } = await import('./discussions.mjs');
+  await checkDiscussions({ request, database, origin, userId, rootId: created.data.review._id });
+  const { validateDatabase } = await import('../server/databaseValidation.js');
+  assert.equal((await validateDatabase(database)).ok, true);
+  const songBeforeValidation = await database.collection('songs').findOne({ _id: songId });
+  await database.collection('songs').updateOne({ _id: songId }, { $set: { 'album.oid': String(new ObjectId()) } });
+  assert.equal((await validateDatabase(database)).issues.related_album_reference, 1);
+  await database.collection('songs').updateOne({ _id: songId }, { $set: { album: songBeforeValidation.album } });
+  const missingReviewId = new ObjectId();
+  await database.collection('users').updateOne({ _id: new ObjectId(userId) }, { $push: { reviewIds: missingReviewId } });
+  const invalidReferences = await validateDatabase(database);
+  assert.equal(invalidReferences.ok, false);
+  assert.equal(invalidReferences.issues.user_review_reference, 1);
+  await database.collection('users').updateOne({ _id: new ObjectId(userId) }, { $pull: { reviewIds: missingReviewId } });
+  const validationFixture = await database.collection('reviews').findOne({ _id: new ObjectId(created.data.review._id) });
+  await database.collection('reviews').updateOne({ _id: validationFixture._id }, { $set: { comments: 'invalid legacy value' } }, { bypassDocumentValidation: true });
+  const invalidSchema = await validateDatabase(database);
+  assert.equal(invalidSchema.ok, false);
+  assert.equal(invalidSchema.schemaViolations.reviews, 1);
+  assert.equal((await database.collection('reviews').findOne({ _id: validationFixture._id })).comments, 'invalid legacy value', 'validation must not repair or mutate records');
+  await database.collection('reviews').updateOne({ _id: validationFixture._id }, { $set: { comments: validationFixture.comments } });
   const deletion = await request('/api/reviews/my?type=song&oid=audit-track', { method: 'DELETE' });
+  assert.equal(await database.collection('reviews').countDocuments({ threadRoot: String(created.data.review._id) }), 0, 'root deletion removes all nested replies');
   const remaining = await database.collection('reviews').countDocuments({ 'user.oid': userId });
   const user = await database.collection('users').findOne({ _id: new ObjectId(userId) });
   const song = await database.collection('songs').findOne({ _id: songId });
@@ -210,7 +252,7 @@ try {
   const login = await request('/api/auth/local/login', { method: 'POST', body: { email, password: 'example-password' } });
   record('local login', { status: login.status, authenticated: (await request('/api/me')).data?.authenticated });
   assert.equal(login.status, 200);
-  await database.collection('users').insertOne({ email: 'google-only@example.invalid', firstname: 'Audit', lastname: 'Google', accounts: [{ kind: 'Google', uid: 'audit-google' }] });
+  await database.collection('users').insertOne({ email: 'google-only@example.invalid', loginEmails: ['google-only@example.invalid'], emailHistory: ['google-only@example.invalid'], role: 'user', reviewIds: [], firstname: 'Audit', lastname: 'Google', accounts: [{ kind: 'Google', uid: 'audit-google' }], googleProfile: { uid: 'audit-google', email: 'google-only@example.invalid', firstname: 'Audit', lastname: 'Google' }, createdAt: now, updatedAt: now });
   const link = await request('/api/auth/local/signup', { method: 'POST', authenticated: false, body: { email: 'google-only@example.invalid', password: 'example-password' } });
   assert.equal(link.status, 409);
   assert.equal(link.data.user, undefined);
@@ -339,7 +381,7 @@ try {
   const deleteId = new ObjectId(deleteOid), ownedReviews = [];
   const exportText = '=SUM(1,2)\n"Quoted", café Ω Привет\n' + 'wrapping '.repeat(700) + 'END_OF_REVIEW';
   for (const [type, itemOid] of [['song', 'audit-track'], ['album', 'audit-album'], ['artist', 'audit-artist']]) {
-    const review = { _id: new ObjectId(), comments: [], createdAt: now, updatedAt: now, dislikes: 0, likes: 0, item: { type, oid: itemOid }, text: exportText, title: 'Private export review', type: 'review', user: { oid: deleteOid }, rating: 9, ...(type === 'album' ? { trackRatings: { 'audit-track': 3.5 } } : {}) };
+    const review = { _id: new ObjectId(), comments: [], votes: [], createdAt: now, updatedAt: now, dislikes: 0, likes: 0, item: { type, oid: itemOid }, text: exportText, title: 'Private export review', type: 'review', user: { oid: deleteOid }, rating: 9, ...(type === 'album' ? { trackRatings: { 'audit-track': 3.5 } } : {}) };
     await database.collection('reviews').insertOne(review); ownedReviews.push(review._id);
     await database.collection(type === 'song' ? 'songs' : type === 'album' ? 'albums' : 'artists').updateMany({}, { $push: { reviews: { review_oid: String(review._id), user_oid: deleteOid } } });
   }
