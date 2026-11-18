@@ -154,7 +154,7 @@ try {
       await page.getByRole('table').waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `overflow at ${width}`);
       await page.getByRole('button', { name: 'Toggle theme', exact: true }).filter({ visible: true }).click();
-      if (width < 1280) {
+      if (width < 768) {
         await page.getByRole('button', { name: 'Toggle menu' }).click();
         await page.getByRole('navigation', { name: 'Mobile primary' }).getByRole('link', { name: 'Community', exact: true }).click();
         await page.getByRole('heading', { name: 'Community', exact: true }).waitFor();

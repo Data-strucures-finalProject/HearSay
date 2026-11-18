@@ -54,12 +54,12 @@ export default function Header() {
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-b-2 border-black dark:border-white transition-colors">
-      <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <Link to="/" className="hidden xl:block text-xl font-bold hover:underline text-black dark:text-white">HearSay</Link>
+      <div className="container mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-x-4">
+        <Link to="/" className="hidden md:block text-xl font-bold hover:underline text-black dark:text-white">HearSay</Link>
 
         {/* Hide desktop nav on small screens to avoid overlapping mobile controls */}
-        <nav aria-label="Primary navigation" className="hidden xl:flex flex-1 mx-4">
-          <ul className="flex justify-center space-x-4">
+        <nav aria-label="Primary navigation" className="hidden md:flex order-last w-full mt-3 border-t border-black dark:border-white pt-2">
+          <ul className="flex flex-wrap items-center gap-x-6 gap-y-2">
             <li><Link to="/discover" className="hover:underline text-black dark:text-white">Discover</Link></li>
             <li><Link to="/community" className="hover:underline text-black dark:text-white">Community</Link></li>
             <li><Link to="/recent-reviews" className="hover:underline text-black dark:text-white">Recent Reviews</Link></li>
@@ -70,7 +70,7 @@ export default function Header() {
         </nav>
 
         {/* Desktop controls: hide on small screens so mobile header/menu is reachable */}
-        <div className="hidden xl:flex items-center space-x-4">
+        <div className="hidden md:flex items-center gap-3 ml-auto min-w-0">
           <button
             onClick={toggleTheme}
             aria-label="Toggle theme"
@@ -85,14 +85,14 @@ export default function Header() {
               placeholder="Search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="border-2 border-black dark:border-white px-3 py-1 bg-white dark:bg-gray-800 text-black dark:text-white"
+              className="w-40 lg:w-56 border-2 border-black dark:border-white px-3 py-1 bg-white dark:bg-gray-800 text-black dark:text-white"
               maxLength={200}
             />
           </form>
           {me.authenticated ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0 max-w-48">
               <Avatar src={me.user?.picture} name={me.user?.name || me.user?.email} size={32} />
-              <Link to="/profile" className="text-black dark:text-white hover:underline">
+              <Link to="/profile" className="min-w-0 truncate text-black dark:text-white hover:underline">
                 {me.user?.name || me.user?.email || 'Profile'}
               </Link>
             </div>
@@ -107,7 +107,7 @@ export default function Header() {
         </div>
 
         {/* Mobile Header (visible only on small screens) */}
-        <div className="xl:hidden flex items-center w-full">
+        <div className="md:hidden flex items-center w-full">
           <Link to="/" className="text-xl font-bold text-black dark:text-white hover:underline">
             HearSay
           </Link>
@@ -142,7 +142,7 @@ export default function Header() {
           id="mobile-menu"
           role="menu"
           aria-labelledby="mobile-menu-button"
-          className="xl:hidden fixed top-16 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t-2 border-black dark:border-white p-4 shadow-lg"
+          className="md:hidden absolute top-full left-0 right-0 z-50 max-h-[calc(100dvh-4.5rem)] overflow-y-auto bg-white dark:bg-gray-900 border-t-2 border-black dark:border-white p-4 shadow-lg"
         >
           <form onSubmit={handleSearch} className="w-full mb-3" role="search" aria-label="Mobile site search">
             <input
@@ -159,7 +159,6 @@ export default function Header() {
             <ul className="space-y-3">
               <li><Link to="/discover" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Discover</Link></li>
               <li><Link to="/community" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Community</Link></li>
-              {me.authenticated && me.user?.role === 'admin' && <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Admin</Link></li>}
               <li>
                 <Link
                   to="/recent-reviews"
@@ -169,17 +168,15 @@ export default function Header() {
                   Recent Reviews
                 </Link>
               </li>
-              {me?.authenticated && (
-                <li>
-                  <Link
-                    to="/my-reviews"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4"
-                  >
-                    My Reviews
-                  </Link>
-                </li>
-              )}
+              <li>
+                <Link
+                  to="/my-reviews"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4"
+                >
+                  My Reviews
+                </Link>
+              </li>
               <li>
                 <Link
                   to="/random"
@@ -189,6 +186,7 @@ export default function Header() {
                   Random
                 </Link>
               </li>
+              {me.authenticated && me.user?.role === 'admin' && <li><Link to="/admin" onClick={() => setMobileMenuOpen(false)} className="block py-2 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800 border-2 border-black dark:border-white px-4">Admin</Link></li>}
             </ul>
           </nav>
 

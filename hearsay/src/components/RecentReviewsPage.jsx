@@ -96,7 +96,7 @@ export default function RecentReviewsPage() {
           {r.media?.coverArt ? (
             <img src={r.media.coverArt} alt={r.media?.title || r.oid} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs">No Image</div>
+            <div className="w-full h-full flex items-center justify-center text-gray-600 dark:text-gray-400 text-xs">No Image</div>
           )}
         </div>
 

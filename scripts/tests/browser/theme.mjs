@@ -34,6 +34,23 @@ try {
     }
     results.push({ theme: report.theme, width: report.width, fixturePages: report.results.length, passed: true });
   }
+  for (const width of [390, 767, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('http://frontend/');
+    const desktop = width >= 768;
+    assert.equal(await page.getByRole('navigation', { name: 'Primary navigation', exact: true }).isVisible(), desktop);
+    assert.equal(await page.getByRole('button', { name: 'Toggle menu' }).isVisible(), !desktop);
+    assert.equal(await page.getByRole('navigation', { name: 'Explore HearSay' }).count(), 0);
+    const layout = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth > innerWidth, headerBottom: document.querySelector('header').getBoundingClientRect().bottom, mainTop: document.querySelector('main').getBoundingClientRect().top }));
+    assert.equal(layout.overflow, false);
+    assert.ok(layout.mainTop >= layout.headerBottom, `header overlaps content at ${width}`);
+    if (!desktop) await page.getByRole('button', { name: 'Toggle menu' }).click();
+    const navigation = page.getByRole('navigation', { name: desktop ? 'Primary navigation' : 'Mobile primary', exact: true });
+    assert.deepEqual(await navigation.getByRole('link').allTextContents(), ['Discover', 'Community', 'Recent Reviews', 'My Reviews', 'Random']);
+    await navigation.getByRole('link', { name: 'Discover', exact: true }).click();
+    await page.getByRole('navigation', { name: 'Discover categories' }).getByRole('link', { name: 'Popular on Spotify', exact: true }).click();
+    await page.getByRole('heading', { name: 'Popular on Spotify', exact: true }).waitFor();
+  }
   await page.goto('http://frontend/auth');
   await page.getByRole('button', { name: "Don't have an account? Register" }).click();
   await page.getByLabel('Confirm Password', { exact: true }).waitFor();

@@ -135,6 +135,7 @@ export const VIEWS = [
             { $eq: ["$type", "review"] },
             { $eq: [{ $toString: "$user.oid" }, { $toString: "$$currentId" }] }
           ] } } },
+          { $match: { deleted: { $ne: true } } },
           { $project: { rating: 1, item: 1, createdAt: 1 } }
         ], as: "userReviews"
       } },
@@ -155,7 +156,7 @@ export const VIEWS = [
       } },
       { $unionWith: {
         coll: "reviews", pipeline: [
-          { $match: { type: "review" } },
+          { $match: { type: "review", deleted: { $ne: true } } },
           { $lookup: {
             from: "users", let: { reviewUserId: "$user.oid" },
             pipeline: [{ $match: { $expr: { $eq: [
@@ -244,6 +245,7 @@ export const VIEWS = [
         from: "reviews", let: { currentId: "$_id" },
         pipeline: [
           { $match: { $expr: { $and: [
+            { $in: ["$item.type", ["song", "album", "artist"]] },
             { $eq: ["$type", "review"] },
             { $eq: [{ $toString: "$user.oid" }, { $toString: "$$currentId" }] }
           ] } } }, { $project: { rating: 1 } }

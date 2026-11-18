@@ -10,12 +10,12 @@ React 19, React Router 7, Vite 7 and Tailwind 4 provide the SPA. `main.jsx` moun
 | `/auth` | AuthPage | Local login/register and Google PKCE redirect |
 | `/auth/callback` | AuthCallback | Validate tab-scoped OAuth state, exchange code once, then return to home or Profile according to intent |
 | `/search?q=...` | SearchPage | Spotify artist/album/track search; ten initial cards/category and Show All within fetched results |
-| `/artist/:artistId` | ArtistPage | Cached artist metadata with Spotify fallback; live albums/singles; artist review/rating |
-| `/album/:albumId` | AlbumRatingPage | Spotify album/track details, written review, direct album rating and track submissions |
-| `/song/:songId` | SongRatingPage | Spotify track/player, own review/rating and delete |
+| `/artist/:artistId` | ArtistPage | Cached artist metadata with Spotify fallback; live albums/singles; review/rating and discussions |
+| `/album/:albumId` | AlbumRatingPage | Spotify album/track details, review/rating, track submissions and discussions |
+| `/song/:songId` | SongRatingPage | Spotify track/player, review/rating, deletion and discussions |
 | `/my-reviews` | MyReviewsPage | Protected; own reviews, live metadata enrichment, pagination, editing and deletion |
 | `/recent-reviews` | RecentReviewsPage | Public song/album/artist sections with independent pagination and links to details |
-| `/review/:reviewId` | ReviewPage | Public review details; author edit controls |
+| `/review/:reviewId` | ReviewPage | Review/comment permalink with linked media context, author edit controls, votes and reply threads |
 | `/profile` | ProfilePage | Protected; profile, name editing, password setup, Google linking, Google detail choices, email management, CSV/PDF downloads, account deletion and logout |
 | `/admin` | AdminPage | Admin-only overview counts and user/review integrity table; server session role verified before rendering |
 | `/discover?view=2` | InsightsPage | Community favourites; other categories are stored catalogue (5), album ratings (6), genres (8), first-review opportunities (9), Popular on Spotify (10) |
@@ -26,13 +26,17 @@ ProtectedRoute checks `/api/me` and redirects guests to `/auth`. Ordinary protec
 
 ## Review behavior and limits
 
+Album, song and artist pages share `DiscussionSection`: paginated reviews, newest/most-liked sorting, per-entry likes/dislikes, author editing/deletion, and collapsible reply trees. Replies load on expansion and support replies to comments; indentation stops increasing after three levels for mobile layouts. Guests can read discussions and are directed to sign in to participate. Deleting a comment leaves a placeholder for its descendants; deleting a media review removes its thread after confirmation. Review forms above the discussion stay synchronized through the scoped `hearsay-review-change` event. Individual review/comment permalinks expose the same discussion controls and link comments to their parent.
+
 Discover and Community use `InsightsPanel` for searchable, sortable, paginated tables and charts. The catalogue filters by media type; admin integrity filters by relationship status. Category metadata is defined in `shared/insights.js`; query parameters are documented in the [backend reference](BACKEND_REFERENCE.md#analytical-queries).
 
 Headphone controls use half-star increments. Most forms enforce 1,000 words; client sanitizeInput additionally caps text at 5,000 characters and strips selected markup patterns. The server uses word count instead. Stored ratings are doubled; API responses use stars. Zero means unrated.
 
+Song and album pages use `MediaDetailLayout.css`: a stacked layout below 1024px and three desktop columns with an 18rem minimum side panel. `HeadphoneRating.css` gives each icon a 44px target and wraps the numeric preview within the available container width. Track titles/durations occupy a separate row above their rating controls. The album track list has a keyboard-focusable vertical scroll region and a separate submit area; no horizontal scrolling is required.
+
 Album track submission requires at least one rated track, not all tracks. It sequentially saves each song review, averages rated tracks, then saves a rounded album rating. Writes can partially succeed. Existing track values load through individual song reviews. My Reviews lists those records as well as albums. The server also accepts optional trackRatings objects from API clients; see the backend contract.
 
-AlbumRatingPage uses Spotify for its album track list. ArtistPage uses cached artist details with live album/single requests. Public ReviewPage displays author/media details from a dedicated backend response, while review editing submits through the upsert endpoint.
+AlbumRatingPage uses Spotify for its album track list. ArtistPage uses cached artist details with live album/single requests. Public ReviewPage links the reviewed title to its media page. Song reviews also display linked album/artist names; album reviews display linked artist names. Comment permalinks retain this media context. The backend resolves cached internal references to Spotify page IDs, with provider metadata used for uncached items; unresolved relationships display their available names without a guessed destination. Review editing submits through the upsert endpoint.
 
 ## Authentication state
 
@@ -62,6 +66,8 @@ From `hearsay`: npm ci; npm run dev:all; npm run build; npm run lint. Separate w
 ## UI and errors
 
 Light/dark mode uses Tailwind's class-based dark variant and CSS variables in `src/index.css`. ThemeContext persists the user's choice in localStorage. The skip link targets `maincontent`; Header manages desktop/mobile navigation and menu expanded state.
+
+At widths of 768px and above, primary tabs appear below the logo/search/account row. Smaller screens use the collapsible menu. Discovery categories live under Discover; Home contains music content without a separate navigation strip.
 
 Provider components live in `context/ThemeContext.jsx`, `context/ToastContext.jsx` and `contexts/AuthContext.jsx`; their context objects and hooks live in adjacent `theme.js`, `toast.js` and `auth.js` modules for Fast Refresh. Components display loading indicators, inline errors, alerts and toasts.
 

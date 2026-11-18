@@ -8,6 +8,7 @@ package "React SPA (hearsay/src)" {
   component "Protected pages\nProfile, My Reviews" as Protected
   component "Admin overview / integrity\nServer-verified admin role" as Admin
   component "Discover / Community\nTen-view tables and charts" as Insights
+  component "DiscussionSection\nVotes and collapsible reply trees" as Discussion
   component "AuthPage / AuthCallback\nLocal auth + Google PKCE" as Auth
 }
 component "Vite dev proxy :5173\nor frontend Nginx :8080" as Proxy
@@ -28,6 +29,8 @@ App --> Insights
 Insights --> Proxy : public view queries
 App --> Auth
 Public --> Proxy : fetch /api
+Public --> Discussion
+Discussion --> Proxy : read threads / authenticated mutations
 Protected --> Proxy : cookie-authenticated fetch
 Admin --> Proxy : admin-only fetch
 Auth --> Proxy : local login and code exchange
@@ -42,6 +45,9 @@ note right of API
  One-time default admin bootstrap.
  Profile supports CSV/PDF export and
  confirmed account/owned-data deletion.
+ Comments are reviews referencing parent reviews.
+ Root deletion removes a thread; comment deletion
+ retains descendants beneath an anonymous placeholder.
 end note
 API --> SpotifyAPI
 SpotifyAPI --> Spotify

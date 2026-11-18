@@ -4,7 +4,7 @@
 
 Express 5 uses the native MongoDB driver, express-session, connect-mongo and bcryptjs; Mongoose is not used. Spotify client-credentials tokens are cached in server memory. Google authorization starts with a server-session state and PKCE challenge, exchanges a code and fetches Google userinfo. Sign-in establishes a session; linking adds a provider to the initiating user. The server does not independently verify a JWT signature.
 
-MongoDB, email-alias initialization and default-admin bootstrap complete before the API listens. Alias/default-admin index failures stop startup; other legacy user/review index failures are logged. `/api/health` reports process health; `/api/test` actually pings the database.
+MongoDB, email-alias initialization, default-admin bootstrap and discussion indexes complete before the API listens. Alias/default-admin/discussion index failures stop startup; other legacy index failures are logged. `/api/health` reports process health; `/api/test` actually pings the database.
 
 Startup reconciles analytical views through `server/insights.js`; installation errors stop startup. Pipelines are defined in `server/analyticsViews.js`, and display metadata is in `shared/insights.js`. Run `npm run db:apply-views` to reconcile views manually.
 
@@ -40,15 +40,26 @@ Authenticated routes require a server session with `user.oid`. Review mutations 
 | DELETE `/api/reviews/my?type=...&oid=...` | Authenticated | Delete own review; type/oid also accepted in JSON body; attempts to remove linked references |
 | GET `/api/reviews/my/list?limit=5&offset=0` | Authenticated | Own reviews sorted updatedAt/_id descending, default 5/max 20 |
 | GET `/api/reviews/recent?limit=20&offset=0&type=song` | Public | Reviews sorted createdAt/_id descending, optional song/album/artist filter, max 50 |
-| GET `/api/reviews/:reviewId` | Public | Enriched review DTO, author and media details, canEdit; invalid ID returns 400 |
+| GET `/api/reviews/:reviewId` | Public | Enriched review DTO, author and media details, canEdit; media includes title/route, related artists `{name,route}` and a song's album `{name,route}`; invalid ID returns 400 |
+| GET `/api/discussions?type=album&oid=...` | Public | Media reviews; `sort=newest` or `top`, `limit=10` (max 30), `offset=0`; returns items, total, nextOffset and ownReview |
+| GET `/api/discussions/:id` | Public | Review/comment with author, counts, viewerVote and ownership; excludes voter identities |
+| GET `/api/discussions/:id/replies` | Public | Immediate replies, oldest first; same limit/offset contract |
+| POST `/api/discussions/:id/replies` | Authenticated | `{text,clientRequestId}`; create a comment referencing its parent; repeated identical requests reuse the entry |
+| PUT `/api/discussions/:id/vote` | Authenticated | `{value:1}`, `-1` or `0`; set, switch or remove the caller's vote atomically |
+| PATCH `/api/discussions/:id` | Author only | Edit `{text}`; media reviews additionally require `rating` on the 0–5 half-star scale |
+| DELETE `/api/discussions/:id` | Author only | Delete a media review's entire thread, or anonymize a comment while preserving its descendants |
 | GET `/api/artists/:id` | Public | Cached artist by Spotify ID, `_id` excluded; null if absent |
 | GET `/api/albums/:id` | Public | Cached album by Spotify ID, `_id` excluded; null if absent |
 
-There are no PUT/PATCH routes. Updates use POST. Generic DB CRUD helpers do not expose HTTP CRUD for every collection.
+Generic DB CRUD helpers do not expose HTTP CRUD for every collection.
 
-Account exports use the session identity only and exclude password hashes, provider tokens and session credentials. CSV has account/review/track_rating rows, quotes embedded commas/newlines and neutralizes spreadsheet formulas. Ratings are exported on the displayed 0–5 scale. PDFKit and bundled DejaVu fonts provide formatted, paginated PDF output from the same records.
+Comments are documents in `reviews` with `type:"review"`, `item:{type:"review",oid:parentReviewId}`, `threadRoot` and `depth`. Parent `comments` arrays contain only `{oid:childId}` references; authors' `reviewIds` include their comments. Comments have a zero stored rating and do not enter media-review feeds or reviewer rankings. Thread depth is capped at 64; text is capped at 8,000 characters and 1,000 words. One vote per user/entry is stored in `votes`; likes/dislikes are derived counts. The unique media-review index excludes comments so one author can post multiple replies to the same parent.
 
-Account deletion removes profile/email history/provider links with the user document, all owned reviews (including ratings), review references from cached media and users, and every configured session-store entry owned by the account. Shared music metadata and other users' data remain. A permanent confirmation is required in the UI and the API. Authenticated requests are serialized per user in the current server process. The standalone MongoDB deployment does not support multi-document transactions: deletionPending blocks normal operations while cleanup is incomplete, permits profile access and retry, and is removed with the account only after cleanup succeeds. Existing local credentials or the already-linked Google identity can authenticate to finish an interrupted deletion. Deleted users cannot authorize requests even with stale sessions. Multiple server instances would require a distributed concurrency strategy.
+Discussion writes and thread cleanup are serialized within the single backend process. Deleting a root removes descendants and user/media references. Deleting a comment clears its author, text and votes but retains its parent/children as a deleted placeholder. Account deletion also removes owned root threads, anonymizes comments in other threads and removes the account's votes. These operations require a distributed concurrency strategy before running multiple backend instances.
+
+Account exports use the session identity only and exclude password hashes, provider tokens and session credentials. CSV has account/review/comment/track_rating rows, quotes embedded commas/newlines and neutralizes spreadsheet formulas. Ratings are exported on the displayed 0–5 scale. PDFKit and bundled DejaVu fonts provide formatted, paginated PDF output from the same records.
+
+Account deletion removes the user document, credentials/provider links, owned media-review threads, vote activity, references and sessions. Comments in threads owned by other users become anonymous deleted placeholders. Shared music metadata remains. A permanent confirmation is required in the UI and the API. Authenticated requests are serialized per user in the current server process. The standalone MongoDB deployment does not support multi-document transactions: deletionPending blocks normal operations while cleanup is incomplete, permits profile access and retry, and is removed with the account only after cleanup succeeds. Existing local credentials or the already-linked Google identity can authenticate to finish an interrupted deletion. Deleted users cannot authorize requests even with stale sessions. Multiple server instances would require a distributed concurrency strategy.
 
 ### Google sign-in and linking
 
@@ -108,23 +119,34 @@ Database defaults to `hearsay`; collection names are lowercase.
 | Collection | Data |
 | --- | --- |
 | users | Primary email, loginEmails, emailHistory, firstname/lastname, role, optional isDefaultAdmin, accounts `{kind,uid}`, googleProfile `{uid,email,firstname,lastname}`, passwordHash, reviewIds and deletionPending |
-| reviews | user.oid, item `{type,oid}`, root type=review, doubled Int32 rating, text, comments, likes/dislikes, ISO-string timestamps, optional trackRatings |
+| reviews | user.oid, item `{type,oid}`, type=review, doubled Int32 rating, text, child comments `{oid}`, votes and counts, ISO-string timestamps; optional threadRoot/depth/deleted/trackRatings |
 | artists | Spotify identity/metadata; album/song/review references |
 | albums | Spotify identity, artist reference, genre, releaseDate, song/review references |
 | songs | spotifyTrackID, title, artist/album references with Spotify IDs, genres/date, review references |
 | expressSessions | Actual connect-mongo session store (configurable), expires/session |
 
-`dbAPI.Sessions` points to `sessions`; middleware defaults to `expressSessions`. User references in reviews are internal ObjectId strings; review item IDs are Spotify IDs. Media references usually use internal ObjectId strings with some Spotify-ID fallbacks. They are application-maintained, not foreign keys. Media likes/dislikes/rating are string placeholders in active schemas.
+`dbAPI.Sessions` points to `sessions`; middleware defaults to `expressSessions`. User references in reviews are internal ObjectId strings; media-review item IDs are Spotify IDs, while comment item IDs are parent-review ObjectId strings. Media references usually use internal ObjectId strings with some Spotify-ID fallbacks. They are application-maintained, not foreign keys. Media likes/dislikes/rating are string placeholders in active schemas.
 
-**Automatic schema source:** `db/schemas/schema-HearSay-*.json`, read/converted by `server/scripts/apply-schemas.mjs`. Compose mounts it at `/app/db-schemas` and the backend Docker command applies five validators before startup. Native startup requires an explicit `npm run db:apply-schemas`.
+**Canonical schema source:** `db/schemas/schema-HearSay-*.json`, loaded by `server/scripts/apply-schemas.mjs`. Compose mounts it at `/app/db-schemas`; the backend command applies six validators before startup. Native startup requires an explicit `npm run db:apply-schemas`. Existing data and duplicate Spotify identities are checked before any validator changes.
 
-`create-*.js` are separate manual shell/GUI scripts with different, more permissive types; they are not used by automatic initialization. `HearSay.*.json` are sample exports.
+`create-*.js` are generated manual collection-creation scripts with identical validators. Regenerate them with `npm run db:sync-schema-scripts`; the runtime suite checks synchronization. `HearSay.*.json` are historical data exports, not schema definitions.
 
-Validation level is moderate: new inserts and updates to already-valid documents are checked; existing invalid documents can remain invalid even when updated. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
+Validation uses `strict`/`error` for every insert and update, including updates to invalid legacy records. The explicit `db:normalize-schema-defaults` migration fills missing application defaults without changing credentials or review content; remaining incompatible data stops schema preflight. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
 
-Startup requires a unique multikey loginEmails index, then initializes missing alias/history arrays on legacy users. Existing arrays are retained so removed emails stay removed. Both active addresses work with the same local password. Historical addresses are retained for provenance only and never authorize login or reserve ownership. Linking saves Google details but changes names/primary email only after independent opt-in choices. Users can change primary address before removing an old one; removing the Google address also unlinks its provider. Passwords and review ownership are preserved.
+| Collection | Enforced document requirements |
+| --- | --- |
+| users | Required identity/provider fields, normalized login emails, primary-email membership and alias history, user/admin roles, bcrypt hash shape for Local sign-in, matching Google account/profile identity, unique author references and valid timestamps |
+| reviews | Media review or parent-referencing comment shape, stored integer ratings 0–10, text at most 8,000 characters/1,000 words, reference-only children, comment depth 1–64, deleted placeholders without author/text/votes, unique voters and exact vote counters; album-only track ratings in half-star steps |
+| albums/songs/artists | Required identity/metadata fields, typed genres/references, unique reference IDs, nonnegative cached counter strings, cached rating strings 0–5; artist followers nonnegative and popularity 0–100 |
+| expressSessions | String ID, BSON expiry date and object session envelope; middleware-owned session contents remain flexible; the configured session collection name is honored |
 
-Code also attempts unique primary email, account-kind/uid and user+item review indexes. No code creates unique Spotify-ID indexes for media collections. User validators describe alias/history arrays, saved Google details, credentials, timestamps and reviewIds; review validators describe optional per-track half-star ratings from 0.5 to 5. The automatic validators and manual creation scripts include these fields.
+Document validators check reference shape; cross-collection existence and cleanup are maintained by application routes and checked by the read-only relationship validator. Cache relationships may retain empty IDs while provider metadata is unavailable. Session expiration and TTL indexes remain managed by connect-mongo.
+
+Startup requires a unique multikey loginEmails index. Strict-schema upgrades require complete alias/history arrays; existing arrays are retained so removed emails stay removed. Both active addresses work with the same local password. Historical addresses are retained for provenance only and never authorize login or reserve ownership. Linking saves Google details but changes names/primary email only after independent opt-in choices. Users can change primary address before removing an old one; removing the Google address also unlinks its provider. Passwords and review ownership are preserved.
+
+Code also attempts unique primary email and account-kind/uid indexes. Required discussion indexes enforce one media review per user/item and unique reply request keys; comments are excluded from the media-review constraint. Required unique indexes on album/song/artist Spotify IDs prevent duplicate cached identities. Media identity indexes are declared in `server/schemaIndexes.js` and applied by both schema setup and API startup.
+
+Run `npm run db:validate` from `hearsay` for read-only canonical-schema checks, installed-validator drift, enforcement mode, required identity indexes, review-author/media backlinks, parent/child threads, tombstones and votes. The report contains counts and issue categories; it excludes credentials and review text and returns a nonzero exit code on failure. For exact demo catalogue coverage, use the seed utility's `--verify` mode described in the [database guide](../db/mongo-cli.md#demo-seed).
 
 ## Configuration
 

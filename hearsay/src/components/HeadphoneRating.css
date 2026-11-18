@@ -1,0 +1,9 @@
+.headphone-rating { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .5rem .75rem; width: 100%; min-width: 0; }
+.headphone-rating__icons { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 2px; width: 228px; max-width: 100%; }
+.headphone-rating .headphone-rating__button { display: flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; cursor: pointer; }
+.headphone-rating__button svg { width: 28px; height: 28px; }
+.headphone-rating--small .headphone-rating__button svg { width: 20px; height: 20px; }
+.headphone-rating--large .headphone-rating__button svg { width: 40px; height: 40px; }
+.headphone-rating__value { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-height: 44px; padding: .5rem .75rem; border-radius: .25rem; font-size: 1rem; font-weight: 500; line-height: 1.25; white-space: nowrap; }
+.headphone-rating__value--large { font-size: 1.125rem; }
+@media (max-width: 639px) { .headphone-rating--stacked { flex-direction: column; } }

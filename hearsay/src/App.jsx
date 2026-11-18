@@ -26,7 +26,7 @@ function App() {
         <Router>
           <div className="min-h-screen bg-white dark:bg-gray-900">
             <Header />
-            <div id="maincontent" tabIndex={-1} className="pt-20">
+            <div id="maincontent" tabIndex={-1} className="pt-20 md:pt-32">
               <Routes>
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/auth" element={<AuthPage />} />

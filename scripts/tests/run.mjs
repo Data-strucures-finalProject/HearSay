@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const browserSuites = ['smoke', 'admin', 'google-link', 'google-profile', 'account-data', 'artist-feed', 'theme'];
+const browserSuites = ['smoke', 'admin', 'google-link', 'google-profile', 'account-data', 'artist-feed', 'theme', 'discussions'];
 const suite = process.argv[2] || 'all';
 const selected = suite === 'all' ? ['runtime', 'insights', ...browserSuites] : suite === 'browser' ? browserSuites : [suite];
 if (selected.some(name => !['runtime', 'insights'].includes(name) && !browserSuites.includes(name))) {
