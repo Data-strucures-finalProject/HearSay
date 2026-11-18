@@ -16,9 +16,13 @@ For native development, from `hearsay` with `.env.development` configured:
 npm run db:apply-schemas
 ```
 
-These commands create/update validators; they do not seed sample data or create reporting views. `create-*.js` files are separate manual MongoDB shell/GUI scripts and are not the automatic initializer. Their validation types differ from the JSON source, so choose one schema source deliberately.
+These commands preflight existing records and duplicate Spotify identities, then apply six validators and unique music-identity indexes. Incompatible data stops the preflight before validators change. They do not seed sample data or create reporting views. The `schema-HearSay-*.json` files are the canonical MongoDB validators; `create-*.js` are generated manual collection-creation scripts with the same rules. From native development, run `npm run db:sync-schema-scripts` after editing a validator; `node server/scripts/sync-schema-scripts.mjs --check` detects stale generated scripts. The manual scripts target the default `hearsay` database; automatic initialization honors configured database/session collection names.
 
-Validation is moderate: new inserts and updates to already-valid documents are checked; existing invalid documents may remain invalid on update. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
+Backend startup installs analytical views in the configured database. Run `docker compose exec backend npm run db:apply-views`, or `npm run db:apply-views` from `hearsay`, to reconcile them manually. Credentials need create-view and `collMod` permissions. Existing views update in place; a conflicting collection causes an error. Installation does not change source documents or seed data.
+
+Validation uses `strict` with action `error`, so all inserts and updates must satisfy the current rules, including updates to already-invalid records. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
+
+For an older database, `npm run db:normalize-schema-defaults` makes existing defaults explicit: missing roles become `user`, missing author lists are reconstructed from owned reviews, and missing vote arrays are initialized only when both vote counters are zero. It does not reset data, change credentials, infer vote identities or repair arbitrary invalid records. Run it before applying the stricter schemas, and inspect any remaining preflight failures. Legacy `HearSay.*.json` exports are historical data snapshots and may require migration before import; the demo seed utility produces the current model.
 
 ## Prerequisites
 
@@ -89,6 +93,33 @@ mongoexport --host "$mongo_server" --port "$mongo_port" --db "$mongo_db" --colle
 ## Compass and connections
 
 Compass can import/export collection data as JSON/CSV. These operations are separate from downloads in the HearSay web UI. Select the intended database/collection and format explicitly. For remote/Atlas connections use the appropriate authenticated URI and TLS settings; percent-encode special characters in URI credentials.
+
+## Demo seed
+
+Local demo credentials are stored in `db/local-demo/demo-credentials.json` relative to the repository root. This Git-ignored file contains the five demo account emails and passwords. The same directory retains `catalog.json` (resolved Spotify metadata) and `seed-report.json` (seed provenance). These files are outside the application build context; do not copy credentials into documentation or source files.
+
+Validate the current application database without changing its records:
+
+```powershell
+docker compose exec -T backend npm run db:validate
+```
+
+The validator reports schema violations, author/media backlinks, thread references, deleted-comment content and vote consistency. It exits nonzero on failure. It does not depend on an old backup or the exact original demo counts.
+
+`server/scripts/seed-demo.mjs` stages the dated Billboard manifest, backs up application records, resets media/reviews, and creates five local demo accounts with 1–5 reviews per item. It retains the admin and the account identified by `SEED_PRESERVE_EMAIL`. Use a private absolute `SEED_WORK_DIR` and run from `hearsay` with the backend environment configured:
+
+```powershell
+node server/scripts/seed-demo.mjs --prepare
+node server/scripts/seed-demo.mjs --backup
+# Copy before-reset.ejson out of the container before applying.
+# Set SEED_CONFIRM_RESET=hearsay only for the intended reset.
+node server/scripts/seed-demo.mjs --apply
+node server/scripts/seed-demo.mjs --verify
+```
+
+The apply phase refuses changes made after backup and restores saved records on failure. It uses an isolated API on port 5186 with staged Spotify responses. Store backups in Git-ignored `db/backups/` and retain demo credentials/catalogue under Git-ignored `db/local-demo/`. Replies are created through the discussion API as separate review documents referencing their parent review/comment. Parent `comments` arrays hold `{oid}` child references. The seed utility's `--verify` mode checks exact original seed coverage and account ownership using `catalog.json`; use `db:validate` once users have added normal activity.
+
+For legacy embedded comments, set a private absolute `DISCUSSION_BACKUP_DIR` and run `node server/scripts/migrate-discussions.mjs` with the backend environment configured. The script backs up account/media/review records, then converts embedded comments while preserving identifiers, authors, text and timestamps. Existing converted records are checked before writes; retries repair author links without duplicating entries. Copy the backup outside the container before recreating it.
 
 ## References
 

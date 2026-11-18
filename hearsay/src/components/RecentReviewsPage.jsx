@@ -96,7 +96,7 @@ export default function RecentReviewsPage() {
           {r.media?.coverArt ? (
             <img src={r.media.coverArt} alt={r.media?.title || r.oid} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-gray-500 dark:text-gray-400 text-xs">No Image</div>
+            <div className="w-full h-full flex items-center justify-center text-gray-600 dark:text-gray-400 text-xs">No Image</div>
           )}
         </div>
 
@@ -106,7 +106,7 @@ export default function RecentReviewsPage() {
             <div className="min-w-0 flex-1">
               <p className="font-medium text-sm text-black dark:text-white whitespace-normal break-words">{r.media?.title || r.oid}</p>
               <p className="text-xs font-medium text-gray-700 dark:text-gray-300 whitespace-normal break-words">{r.userName}</p>
-               <p className="text-[10px] text-gray-500 dark:text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</p>
+               <p className="text-[10px] text-gray-500 dark:text-gray-400">{new Date(r.createdAt).toLocaleDateString()}</p>
             </div>
 
             {/* Rating control: appears to the right on desktop, below title on mobile */}
@@ -124,7 +124,7 @@ export default function RecentReviewsPage() {
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-gray-500 dark:text-gray-500 italic">No review text</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 italic">No review text</p>
             )}
           </div>
         </div>
@@ -137,6 +137,7 @@ export default function RecentReviewsPage() {
       <h1 className="text-2xl font-bold mb-6">
         <span className="text-black dark:text-white">Recent Reviews</span>
       </h1>
+      <p className="mb-6 text-black dark:text-white"><Link to="/community?view=1" className="underline">Browse album reviews as a table</Link> · <Link to="/community?view=3" className="underline">More positive than average</Link></p>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Songs Column */}

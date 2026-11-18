@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import InsightsPanel from './InsightsPanel';
+import { INSIGHTS } from '../../shared/insights';
 
 export default function AdminPage() {
   const [state, setState] = useState({ loading: true, error: null, counts: null });
@@ -22,5 +24,6 @@ export default function AdminPage() {
     {state.counts && <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       {Object.entries(state.counts).map(([name, count]) => <div key={name} className="border-2 border-black dark:border-white p-4"><dt className="capitalize">{name}</dt><dd className="text-2xl font-semibold">{count}</dd></div>)}
     </dl>}
+    {state.counts && <InsightsPanel spec={INSIGHTS.find(view => view.id === 4)} />}
   </main>;
 }

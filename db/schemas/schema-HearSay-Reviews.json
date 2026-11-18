@@ -1,90 +1,678 @@
 {
-  "$jsonSchema": {
-    "bsonType": "object",
-    "required": [
-      "_id",
-      "comments",
-      "createdAt",
-      "dislikes",
-      "item",
-      "likes",
-      "text",
-      "type",
-      "updatedAt",
-      "user"
-    ],
-    "properties": {
-      "_id": {
-        "bsonType": "objectId"
-      },
-      "comments": {
-        "bsonType": "array",
-        "items": {
-          "bsonType": "object",
-          "properties": {
-            "oid": {
-              "bsonType": "string"
-            }
-          },
-          "required": [
-            "oid"
-          ]
-        }
-      },
-      "createdAt": {
-        "bsonType": "string"
-      },
-      "dislikes": {
-        "bsonType": "int"
-      },
-      "item": {
+  "$and": [
+    {
+      "$jsonSchema": {
         "bsonType": "object",
+        "required": [
+          "_id",
+          "type",
+          "item",
+          "user",
+          "rating",
+          "text",
+          "comments",
+          "votes",
+          "likes",
+          "dislikes",
+          "createdAt",
+          "updatedAt"
+        ],
         "properties": {
-          "oid": {
-            "bsonType": "string"
+          "_id": {
+            "bsonType": "objectId"
           },
           "type": {
+            "enum": [
+              "review"
+            ]
+          },
+          "item": {
+            "bsonType": "object",
+            "required": [
+              "type",
+              "oid"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "song",
+                  "album",
+                  "artist",
+                  "review"
+                ]
+              },
+              "oid": {
+                "bsonType": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "additionalProperties": false
+          },
+          "itemType": {
+            "enum": [
+              "song",
+              "album",
+              "artist",
+              "review"
+            ]
+          },
+          "user": {
+            "bsonType": "object",
+            "required": [
+              "oid"
+            ],
+            "properties": {
+              "oid": {
+                "bsonType": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "rating": {
+            "bsonType": "int",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "text": {
+            "bsonType": "string",
+            "maxLength": 8000
+          },
+          "title": {
             "bsonType": "string"
+          },
+          "comments": {
+            "bsonType": "array",
+            "items": {
+              "bsonType": "object",
+              "required": [
+                "oid"
+              ],
+              "properties": {
+                "oid": {
+                  "bsonType": "string",
+                  "pattern": "^[a-fA-F0-9]{24}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "uniqueItems": true
+          },
+          "votes": {
+            "bsonType": "array",
+            "items": {
+              "bsonType": "object",
+              "required": [
+                "userOid",
+                "value"
+              ],
+              "properties": {
+                "userOid": {
+                  "bsonType": "string",
+                  "pattern": "^[a-fA-F0-9]{24}$"
+                },
+                "value": {
+                  "bsonType": "int",
+                  "enum": [
+                    -1,
+                    1
+                  ]
+                }
+              },
+              "additionalProperties": false
+            },
+            "uniqueItems": true
+          },
+          "likes": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "dislikes": {
+            "bsonType": "int",
+            "minimum": 0
+          },
+          "createdAt": {
+            "bsonType": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$"
+          },
+          "updatedAt": {
+            "bsonType": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T([01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(\\.\\d{1,3})?Z$"
+          },
+          "threadRoot": {
+            "bsonType": "string",
+            "pattern": "^[a-fA-F0-9]{24}$"
+          },
+          "depth": {
+            "bsonType": "int",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "deleted": {
+            "bsonType": "bool"
+          },
+          "threadDeleting": {
+            "bsonType": "bool"
+          },
+          "clientRequestId": {
+            "bsonType": "string",
+            "pattern": "^[A-Za-z0-9-]{8,80}$"
+          },
+          "trackRatings": {
+            "bsonType": "object",
+            "patternProperties": {
+              "^[A-Za-z0-9-]{1,64}$": {
+                "bsonType": [
+                  "int",
+                  "long",
+                  "double",
+                  "decimal"
+                ],
+                "minimum": 0.5,
+                "maximum": 5,
+                "multipleOf": 0.5
+              }
+            },
+            "additionalProperties": false
           }
         },
-        "required": [
-          "oid",
-          "type"
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "properties": {
+              "item": {
+                "bsonType": "object",
+                "required": [
+                  "type",
+                  "oid"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "song",
+                      "album",
+                      "artist"
+                    ]
+                  },
+                  "oid": {
+                    "bsonType": "string",
+                    "pattern": "^[A-Za-z0-9-]{1,64}$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "user": {
+                "bsonType": "object",
+                "required": [
+                  "oid"
+                ],
+                "properties": {
+                  "oid": {
+                    "bsonType": "string",
+                    "pattern": "^[a-fA-F0-9]{24}$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "threadRoot"
+                  ]
+                },
+                {
+                  "required": [
+                    "depth"
+                  ]
+                },
+                {
+                  "required": [
+                    "clientRequestId"
+                  ]
+                },
+                {
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "threadRoot",
+              "depth"
+            ],
+            "properties": {
+              "item": {
+                "bsonType": "object",
+                "required": [
+                  "type",
+                  "oid"
+                ],
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "review"
+                    ]
+                  },
+                  "oid": {
+                    "bsonType": "string",
+                    "pattern": "^[a-fA-F0-9]{24}$"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "rating": {
+                "enum": [
+                  0
+                ]
+              },
+              "threadDeleting": {
+                "enum": [
+                  false
+                ]
+              }
+            },
+            "not": {
+              "required": [
+                "trackRatings"
+              ]
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "user": {
+                    "bsonType": "object",
+                    "required": [
+                      "oid"
+                    ],
+                    "properties": {
+                      "oid": {
+                        "bsonType": "string",
+                        "pattern": "^[a-fA-F0-9]{24}$"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "text": {
+                    "bsonType": "string",
+                    "pattern": "\\S"
+                  },
+                  "deleted": {
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              },
+              {
+                "required": [
+                  "deleted"
+                ],
+                "properties": {
+                  "deleted": {
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "user": {
+                    "bsonType": "object",
+                    "required": [
+                      "oid"
+                    ],
+                    "properties": {
+                      "oid": {
+                        "enum": [
+                          ""
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "text": {
+                    "enum": [
+                      ""
+                    ]
+                  },
+                  "likes": {
+                    "enum": [
+                      0
+                    ]
+                  },
+                  "dislikes": {
+                    "enum": [
+                      0
+                    ]
+                  },
+                  "votes": {
+                    "bsonType": "array",
+                    "maxItems": 0
+                  }
+                },
+                "not": {
+                  "required": [
+                    "clientRequestId"
+                  ]
+                }
+              }
+            ]
+          }
         ]
-      },
-      "likes": {
-        "bsonType": "int"
-      },
-      "rating": {
-        "bsonType": "int"
-      },
-      "trackRatings": {
-        "bsonType": "object",
-        "additionalProperties": { "bsonType": ["int", "long", "double", "decimal"], "minimum": 0.5, "maximum": 5, "multipleOf": 0.5 }
-      },
-      "text": {
-        "bsonType": "string"
-      },
-      "title": {
-        "bsonType": "string"
-      },
-      "type": {
-        "bsonType": "string"
-      },
-      "updatedAt": {
-        "bsonType": "string"
-      },
-      "user": {
-        "bsonType": "object",
-        "properties": {
-          "oid": {
-            "bsonType": "string"
+      }
+    },
+    {
+      "$expr": {
+        "$let": {
+          "vars": {
+            "votes": {
+              "$cond": [
+                {
+                  "$isArray": "$votes"
+                },
+                "$votes",
+                []
+              ]
+            },
+            "words": {
+              "$regexFindAll": {
+                "input": {
+                  "$cond": [
+                    {
+                      "$eq": [
+                        {
+                          "$type": "$text"
+                        },
+                        "string"
+                      ]
+                    },
+                    "$text",
+                    ""
+                  ]
+                },
+                "regex": "\\S+"
+              }
+            }
+          },
+          "in": {
+            "$and": [
+              {
+                "$let": {
+                  "vars": {
+                    "values": {
+                      "$map": {
+                        "input": {
+                          "$cond": [
+                            {
+                              "$isArray": "$votes"
+                            },
+                            "$votes",
+                            []
+                          ]
+                        },
+                        "as": "entry",
+                        "in": "$$entry.userOid"
+                      }
+                    }
+                  },
+                  "in": {
+                    "$eq": [
+                      {
+                        "$size": "$$values"
+                      },
+                      {
+                        "$size": {
+                          "$setUnion": [
+                            "$$values",
+                            []
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "$eq": [
+                  "$likes",
+                  {
+                    "$size": {
+                      "$filter": {
+                        "input": "$$votes",
+                        "as": "vote",
+                        "cond": {
+                          "$eq": [
+                            "$$vote.value",
+                            1
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "$eq": [
+                  "$dislikes",
+                  {
+                    "$size": {
+                      "$filter": {
+                        "input": "$$votes",
+                        "as": "vote",
+                        "cond": {
+                          "$eq": [
+                            "$$vote.value",
+                            -1
+                          ]
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "$lte": [
+                  {
+                    "$size": "$$words"
+                  },
+                  1000
+                ]
+              },
+              {
+                "$or": [
+                  {
+                    "$eq": [
+                      "$item.type",
+                      "review"
+                    ]
+                  },
+                  {
+                    "$gt": [
+                      "$rating",
+                      0
+                    ]
+                  },
+                  {
+                    "$gt": [
+                      {
+                        "$size": "$$words"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "$or": [
+                  {
+                    "$eq": [
+                      {
+                        "$type": "$itemType"
+                      },
+                      "missing"
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      "$itemType",
+                      "$item.type"
+                    ]
+                  }
+                ]
+              },
+              {
+                "$or": [
+                  {
+                    "$eq": [
+                      {
+                        "$type": "$trackRatings"
+                      },
+                      "missing"
+                    ]
+                  },
+                  {
+                    "$eq": [
+                      "$item.type",
+                      "album"
+                    ]
+                  }
+                ]
+              },
+              {
+                "$or": [
+                  {
+                    "$ne": [
+                      "$item.type",
+                      "review"
+                    ]
+                  },
+                  {
+                    "$and": [
+                      {
+                        "$ne": [
+                          "$item.oid",
+                          {
+                            "$toString": "$_id"
+                          }
+                        ]
+                      },
+                      {
+                        "$ne": [
+                          "$threadRoot",
+                          {
+                            "$toString": "$_id"
+                          }
+                        ]
+                      },
+                      {
+                        "$cond": [
+                          {
+                            "$eq": [
+                              "$depth",
+                              1
+                            ]
+                          },
+                          {
+                            "$eq": [
+                              "$item.oid",
+                              "$threadRoot"
+                            ]
+                          },
+                          {
+                            "$ne": [
+                              "$item.oid",
+                              "$threadRoot"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           }
-        },
-        "required": [
-          "oid"
+        }
+      }
+    },
+    {
+      "$expr": {
+        "$and": [
+          {
+            "$ne": [
+              {
+                "$convert": {
+                  "input": "$createdAt",
+                  "to": "date",
+                  "onError": null,
+                  "onNull": null
+                }
+              },
+              null
+            ]
+          },
+          {
+            "$ne": [
+              {
+                "$convert": {
+                  "input": "$updatedAt",
+                  "to": "date",
+                  "onError": null,
+                  "onNull": null
+                }
+              },
+              null
+            ]
+          },
+          {
+            "$cond": [
+              {
+                "$and": [
+                  {
+                    "$ne": [
+                      {
+                        "$type": "$createdAt"
+                      },
+                      "missing"
+                    ]
+                  },
+                  {
+                    "$ne": [
+                      {
+                        "$type": "$updatedAt"
+                      },
+                      "missing"
+                    ]
+                  }
+                ]
+              },
+              {
+                "$gte": [
+                  {
+                    "$convert": {
+                      "input": "$updatedAt",
+                      "to": "date",
+                      "onError": null,
+                      "onNull": null
+                    }
+                  },
+                  {
+                    "$convert": {
+                      "input": "$createdAt",
+                      "to": "date",
+                      "onError": null,
+                      "onNull": null
+                    }
+                  }
+                ]
+              },
+              true
+            ]
+          }
         ]
       }
     }
-  }
+  ]
 }

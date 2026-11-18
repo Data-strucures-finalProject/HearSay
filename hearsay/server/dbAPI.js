@@ -208,10 +208,10 @@ export async function ensureReviewIndexes() {
         unique: true,
         partialFilterExpression: {
           'user.oid': { $type: 'string' },
-          'item.type': { $type: 'string' },
+          'item.type': { $in: ['song', 'album', 'artist'] },
           'item.oid': { $type: 'string' },
         },
-        name: 'uniq_user_item',
+        name: 'uniq_user_media_item',
       }
     );
   } catch (e) {
