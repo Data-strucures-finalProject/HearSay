@@ -1,6 +1,33 @@
+// Generated from schema-HearSay-ExpressSessions.json; run npm run db:sync-schema-scripts to update.
 use("hearsay");
 
-// connect-mongo creates and manages this collection automatically.
-// No strict validator is applied because session fields are managed by the
-// express-session middleware.
-db.createCollection("expressSessions");
+db.createCollection("expressSessions", {
+  validator: {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": [
+        "_id",
+        "expires",
+        "session"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "_id": {
+          "bsonType": "string",
+          "minLength": 1
+        },
+        "expires": {
+          "bsonType": "date"
+        },
+        "lastModified": {
+          "bsonType": "date"
+        },
+        "session": {
+          "bsonType": "object"
+        }
+      }
+    }
+  },
+  validationLevel: "strict",
+  validationAction: "error"
+});

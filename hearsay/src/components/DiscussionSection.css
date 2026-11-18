@@ -1,0 +1,22 @@
+.discussion-section { margin: 2rem 0; padding: 1rem; border: 2px solid var(--border); background: var(--card); color: var(--text); }
+.dark .discussion-section { background: #111827; color: #f9fafb; }
+.discussion-heading, .discussion-meta, .discussion-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.discussion-heading { justify-content: space-between; margin-bottom: .75rem; }
+.discussion-heading h2 { font-size: 1.25rem; font-weight: 700; }
+.discussion-entry { padding: 1rem 0; border-top: 1px solid #64748b; min-width: 0; }
+.discussion-meta { font-size: .875rem; }
+.discussion-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: .75rem 0; }
+.discussion-section button, .discussion-section select { border: 1px solid currentColor; padding: .4rem .65rem; background: transparent; color: inherit; min-height: 44px; }
+.discussion-section button[aria-pressed="true"] { background: #1e40af; color: #fff; border-color: #1e40af; }
+.discussion-section button:disabled { cursor: default; }
+.discussion-section button:focus-visible, .discussion-section a:focus-visible, .discussion-section textarea:focus-visible, .discussion-section select:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+.dark .discussion-section :focus-visible { outline-color: #93c5fd; }
+.discussion-section a { text-decoration: underline; }
+.discussion-editor { display: grid; gap: .5rem; margin: 1rem 0; }
+.discussion-editor textarea { width: 100%; border: 1px solid currentColor; padding: .75rem; color: inherit; background: transparent; resize: vertical; }
+.discussion-children { margin: 1rem 0 0 .75rem; padding-left: .75rem; border-left: 2px solid #64748b; }
+.discussion-children-flat { margin-top: 1rem; }
+.discussion-error { color: #b91c1c; margin: .75rem 0; }
+.dark .discussion-error { color: #fca5a5; }
+.discussion-help { margin: .5rem 0 1rem; }
+@media (max-width: 480px) { .discussion-section { padding: .75rem; } .discussion-children { margin-left: .25rem; padding-left: .5rem; } }

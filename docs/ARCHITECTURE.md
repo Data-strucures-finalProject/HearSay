@@ -7,6 +7,9 @@ flowchart TD
     Browser[Browser: React SPA] --> Proxy[Vite dev proxy or frontend Nginx]
     Proxy --> API[Express REST/JSON API]
     API --> Mongo[(MongoDB: users, reviews, artists, albums, songs)]
+    API --> Views[Ten read-only MongoDB views]
+    Views --> Mongo
+    Discover[Discover and Community tables/charts] --> API
     API --> Sessions[(connect-mongo: expressSessions)]
     API --> Spotify[Spotify Web API: server app token]
     Browser --> Google[Google authorization with PKCE]
@@ -31,7 +34,10 @@ flowchart LR
     Profile --> Delete[Confirmed account and owned-data deletion]
     Session --> Role{Database role check}
     Role --> Admin[Admin-only overview]
+    Admin --> Integrity[User/review integrity table]
     Session --> Write[Own review create/update/delete]
+    Session --> Discussion[Reply, edit own comments and vote]
+    Discussion --> Threads[Review documents linked to parent reviews]
     Album[Album track submission] --> Songs[Save each rated song review]
     Songs --> Average[Average rated tracks]
     Average --> AlbumReview[Save album rating]
@@ -44,8 +50,13 @@ submitting on public media pages are rejected by the API and usually see alerts.
 Startup seeds the configured default administrator only when no default admin exists.
 The Admin page and its API require the persisted admin role; cached client state cannot
 authorize access. Account exports exclude credentials. Account deletion removes owned
-reviews, references and sessions while retaining shared music metadata; a durable marker
+review threads, votes, references and sessions while retaining shared music metadata.
+Comments within other users' threads become anonymous placeholders. A durable marker
 allows retrying incomplete cleanup on the standalone MongoDB deployment.
+
+Backend startup reconciles analytical MongoDB views. Discover/Community query them through public endpoints; the integrity view requires the admin middleware. See [API contracts](BACKEND_REFERENCE.md#analytical-queries).
+
+Comments share the reviews collection and reference an immediate parent plus a thread root. The backend serializes discussion writes in one process; deleting a media review removes its subtree, while deleting a comment preserves its descendants. Media-review feeds and activity rankings exclude comments. The read-only `db:validate` command checks schema and relationship consistency.
 
 ## Historical rendered diagrams
 
@@ -58,6 +69,4 @@ implementation references:
 | high-level.png | Earlier conceptual site structure |
 | flow.png | Earlier conceptual navigation flow |
 
-Use the diagrams above or the updated PlantUML source for current architecture figures.
-The PNGs were inspected but not regenerated; their historical status is explicit
-to avoid presenting old behavior as the current app.
+Use the Mermaid diagrams above or the PlantUML source for current architecture.

@@ -21,6 +21,10 @@ import * as spotify from './spotifyAPI.js';
 import { emailOwnerFilter, initializeUserEmails, mountEmailRoutes, publicProfile, userProjection } from './userEmails.js';
 import { mountAccountData } from './accountData.js';
 import { initializeDefaultAdmin, mountAdminRoutes } from './admin.js';
+import { installViews, mountInsightRoutes } from './insights.js';
+import { ensureDiscussionIndexes, mountDiscussionRoutes, removeThread, withDiscussionLock } from './discussions.js';
+import { getReviewMedia } from './reviewMedia.js';
+import { ensureMediaIndexes } from './schemaIndexes.js';
 
 // Load .env in development so server can read GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 dotenv.config();
@@ -125,7 +129,7 @@ app.use((req, res, next) => {
       res.header('Access-Control-Allow-Credentials', 'true');
     }
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     return res.sendStatus(204);
   }
   next();
@@ -142,6 +146,7 @@ await db.connectMongo().catch((err) => {
 // Email alias uniqueness must be established before accepting authentication.
 await initializeUserEmails(db.getDb());
 await initializeDefaultAdmin(db.getDb());
+await installViews(db.getDb());
 // Other legacy index failures are reported without stopping startup.
 try {
   await db.ensureUserIndexes();
@@ -150,6 +155,10 @@ try {
   console.warn('[DB] Could not ensure user indexes (likely due to duplicates).', e?.message || e);
   console.warn('[DB] To fix duplicates, run: npm run db:dedupe-users');
 }
+
+// Required discussion indexes must be ready before accepting requests.
+await ensureDiscussionIndexes(db.getDb());
+await ensureMediaIndexes(db.getDb());
 
 // Sessions backed by MongoDB
 app.use(
@@ -179,6 +188,8 @@ app.use(
 
 mountAccountData(app, db.getDb(), { sessionName: SESSION_NAME, sessionsCollection: SESSIONS_COLLECTION });
 mountAdminRoutes(app, db.getDb());
+mountInsightRoutes(app, db.getDb());
+mountDiscussionRoutes(app, db.getDb());
 
 // Rotate session id every SESSION_ROTATE_MS to mitigate fixation
 app.use((req, res, next) => {
@@ -245,7 +256,7 @@ app.post('/api/auth/local/signup', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const em = normalizeEmail(email);
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
+    if (em.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
     if (!validatePassword(password)) return res.status(400).json({ ok: false, error: 'weak_password', minLength: 6 });
 
     const usersCol = db.Users.collection();
@@ -260,6 +271,7 @@ app.post('/api/auth/local/signup', async (req, res) => {
         email: em,
         loginEmails: [em],
         emailHistory: [em],
+        reviewIds: [],
         passwordHash: hash,
         firstname: '',
         lastname: '',
@@ -294,7 +306,7 @@ app.post('/api/auth/local/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const em = normalizeEmail(email);
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
+    if (em.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
     const usersCol = db.Users.collection();
     const user = await usersCol.findOne(emailOwnerFilter(em));
     if (!user || !user.passwordHash) return res.status(404).json({ ok: false, error: 'no_local_account' });
@@ -447,7 +459,7 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     } catch (e) {
       console.warn('[SERVER] Failed to fetch Google userinfo', e);
     }
-    if (!profile?.sub || !profile?.email) {
+    if (typeof profile?.sub !== 'string' || !profile.sub || profile.sub.length > 320 || typeof profile?.email !== 'string' || profile.email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(profile.email)) {
       return res.status(502).json({ ok: false, error: 'google_profile_unavailable' });
     }
     if (profile.email_verified !== true) {
@@ -497,10 +509,11 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     const emailOwner = identityOwner || await usersCol.findOne(emailOwnerFilter(googleEmail));
     if (emailOwner?.deletionPending && !identityOwner) return res.status(409).json({ ok: false, error: 'account_deletion_pending' });
     const filter = emailOwner ? { _id: emailOwner._id } : { email: googleEmail };
+    const signInTimestamp = new Date();
     const signInUpdate = {
-      $set: { updatedAt: new Date().toISOString(), googleProfile: googleDetails },
+      $set: { updatedAt: signInTimestamp.toISOString(), googleProfile: googleDetails },
       $addToSet: { accounts: googleAccount },
-      $setOnInsert: { firstname, lastname, role: 'user', createdAt: new Date() },
+      $setOnInsert: { firstname, lastname, role: 'user', reviewIds: [], createdAt: signInTimestamp },
     };
     if (emailOwner) {
       signInUpdate.$addToSet.loginEmails = googleEmail;
@@ -826,12 +839,14 @@ app.post('/api/reviews/upsert', async (req, res) => {
     const { type, oid, rating, text, trackRatings } = req.body || {};
     const allowed = new Set(['song', 'album', 'artist']);
     if (!allowed.has(String(type))) return res.status(400).json({ ok: false, error: 'invalid_type' });
-    if (!oid || typeof oid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_oid' });
+    if (typeof oid !== 'string' || !/^[A-Za-z0-9-]{1,64}$/.test(oid)) return res.status(400).json({ ok: false, error: 'invalid_oid' });
+    if (text !== undefined && typeof text !== 'string') return res.status(400).json({ ok: false, error: 'invalid_text' });
+    if (typeof text === 'string' && text.length > 8000) return res.status(400).json({ ok: false, error: 'text_too_long', maxChars: 8000 });
 
     if (trackRatings !== undefined && (
       type !== 'album' || !trackRatings || typeof trackRatings !== 'object' || Array.isArray(trackRatings) ||
       Object.entries(trackRatings).some(([trackId, score]) =>
-        !trackId.trim() || !Number.isFinite(score) || score < 0.5 || score > 5 || !Number.isInteger(score * 2)
+        !/^[A-Za-z0-9-]{1,64}$/.test(trackId) || !Number.isFinite(score) || score < 0.5 || score > 5 || !Number.isInteger(score * 2)
       )
     )) return res.status(400).json({ ok: false, error: 'invalid_track_ratings' });
 
@@ -910,6 +925,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
       likes: new Int32(0),
       dislikes: new Int32(0),
       comments: [],
+      votes: [],
       // Root-level type represents document kind; keep item.type for media kind
       type: 'review',
       itemType: String(type),
@@ -1798,71 +1814,22 @@ app.post('/api/reviews/upsert', async (req, res) => {
   }
 });
 
-// Delete current user's review for an item and remove from user profile list
+// Delete an owned media review together with its complete discussion tree.
 app.delete('/api/reviews/my', async (req, res) => {
+  const userOid = req.session?.user?.oid;
+  if (!userOid) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  const type = req.query?.type || req.body?.type;
+  const itemId = req.query?.oid || req.body?.oid;
+  if (!['song', 'album', 'artist'].includes(type)) return res.status(400).json({ ok: false, error: 'invalid_type' });
+  if (!itemId || typeof itemId !== 'string') return res.status(400).json({ ok: false, error: 'invalid_oid' });
   try {
-    const userOid = req.session?.user?.oid;
-    if (!userOid) return res.status(401).json({ ok: false, error: 'unauthorized' });
-    const type = req.query?.type || req.body?.type;
-    const oid = req.query?.oid || req.body?.oid;
-    const allowed = new Set(['song', 'album', 'artist']);
-    if (!allowed.has(String(type))) return res.status(400).json({ ok: false, error: 'invalid_type' });
-    if (!oid || typeof oid !== 'string') return res.status(400).json({ ok: false, error: 'invalid_oid' });
-
-    const reviews = db.Reviews.collection();
-    const filter = { 'user.oid': userOid, 'item.type': type, 'item.oid': oid };
-    const deletedDoc = await reviews.findOneAndDelete(filter);
-
-    // If no document was found/deleted, return deleted: false
-    if (!deletedDoc) {
-      return res.json({ ok: true, deleted: false });
-    }
-
-    // Document was successfully deleted - clean up references
-    try {
-      const usersCol = db.Users.collection();
-      await usersCol.updateOne(
-        { _id: new ObjectId(userOid) },
-        { $pull: { reviewIds: deletedDoc._id } }
-      );
-    } catch (e) {
-      console.warn('[Reviews] Failed to pull reviewId from user profile on delete', e?.message || e);
-    }
-
-    // Also remove reference from corresponding media document
-    try {
-      const reviewIdStr = deletedDoc?._id?.toString?.();
-      if (reviewIdStr) {
-        if (type === 'artist') {
-          const artistsCol = db.Artists.collection();
-          await artistsCol.updateOne(
-            { $or: [{ spotifyArtistId: oid }, { oid }] },
-            { $pull: { reviews: { review_oid: reviewIdStr, user_oid: userOid } }, $set: { updatedAt: new Date().toISOString() } },
-          );
-        } else if (type === 'album') {
-          const albumsCol = db.Albums.collection();
-          await albumsCol.updateOne(
-            { spotifyAlbumId: oid },
-            { $pull: { reviews: { review_oid: reviewIdStr, user_oid: userOid } } },
-          );
-        } else if (type === 'song') {
-          const songsCol = db.Songs.collection();
-          await songsCol.updateOne(
-            { spotifyTrackID: oid },
-            { $pull: { reviews: { review_oid: reviewIdStr, user_oid: userOid } } },
-          );
-        }
-      }
-    } catch (eref) {
-      console.warn('[Reviews] Failed to remove media review reference on delete', eref?.message || eref);
-    }
-
-    // Return deleted: true since we successfully deleted the document
-    return res.json({ ok: true, deleted: true });
-  } catch (e) {
-    console.error('[Reviews] delete my review error', e);
-    return res.status(500).json({ ok: false, error: 'server_error' });
-  }
+    await withDiscussionLock(async () => {
+      const entry = await db.Reviews.collection().findOne({ 'user.oid': userOid, 'item.type': type, 'item.oid': itemId });
+      if (!entry) return res.json({ ok: true, deleted: false });
+      await removeThread(db.getDb(), String(entry._id));
+      res.json({ ok: true, deleted: true });
+    });
+  } catch { res.status(503).json({ ok: false, error: 'discussion_unavailable' }); }
 });
 
 // Get current user's review for an item
@@ -1898,7 +1865,7 @@ app.get('/api/reviews/my/list', async (req, res) => {
 
     const reviewsCol = db.Reviews.collection();
     const cursor = reviewsCol
-      .find({ 'user.oid': userOid })
+      .find({ 'user.oid': userOid, 'item.type': { $in: ['song', 'album', 'artist'] } })
       .project({ item: 1, text: 1, rating: 1, createdAt: 1, updatedAt: 1, trackRatings: 1 })
       .sort({ updatedAt: -1, _id: -1 })
       .skip(offset)
@@ -1977,7 +1944,7 @@ app.get('/api/reviews/recent', async (req, res) => {
     const usersCol = db.Users.collection();
 
     // Build query filter
-    const query = {};
+    const query = { 'item.type': { $in: ['song', 'album', 'artist'] }, threadDeleting: { $ne: true } };
     if (typeFilter && ['song', 'album', 'artist'].includes(typeFilter)) {
       query['item.type'] = typeFilter;
     }
@@ -2160,63 +2127,34 @@ app.get('/api/reviews/:reviewId', async (req, res) => {
     const usersCol = db.Users.collection();
 
     const review = await reviewsCol.findOne({ _id: new ObjectId(reviewId) });
-    if (!review) return res.status(404).json({ ok: false, error: 'review_not_found' });
+    if (!review || review.threadDeleting) return res.status(404).json({ ok: false, error: 'review_not_found' });
 
     // Fetch user info
     const userDoc = review.user?.oid ? await usersCol.findOne(
       { _id: new ObjectId(review.user.oid) },
       { projection: { firstname: 1, lastname: 1, email: 1 } }
     ) : null;
-    const userName = userDoc ? [userDoc.firstname, userDoc.lastname].filter(Boolean).join(' ') || userDoc.email : 'Anonymous';
+    const userName = review.deleted ? '[deleted]' : userDoc ? [userDoc.firstname, userDoc.lastname].filter(Boolean).join(' ') || 'Community member' : 'Community member';
 
     // Fetch media info
-    const type = review.item?.type;
-    const oid = review.item?.oid;
-    let media = null;
-
-    if (type === 'song' && oid) {
-      const r = await spotify.getTrack(oid);
-      const t = r?.data;
-      if (t) {
-        media = {
-          title: t.name,
-          coverArt: t.album?.images?.[0]?.url,
-          route: `/song/${t.id}`,
-        };
-      }
-    } else if (type === 'album' && oid) {
-      const r = await spotify.getAlbum(oid);
-      const a = r?.data;
-      if (a) {
-        media = {
-          title: a.name,
-          coverArt: a.images?.[0]?.url,
-          route: `/album/${a.id}`,
-        };
-      }
-    } else if (type === 'artist' && oid) {
-      const r = await spotify.getArtist(oid);
-      const a = r?.data;
-      if (a) {
-        media = {
-          title: a.name,
-          coverArt: a.images?.[0]?.url,
-          route: `/artist/${a.id}`,
-        };
-      }
-    }
+    const root = review.item?.type === 'review' && ObjectId.isValid(review.threadRoot) ? await reviewsCol.findOne({ _id: new ObjectId(review.threadRoot), threadDeleting: { $ne: true } }) : review;
+    if (!root) return res.status(404).json({ ok: false, error: 'review_not_found' });
+    const type = root.item?.type;
+    const oid = root.item?.oid;
+    const media = await getReviewMedia(db.getDb(), spotify, type, oid);
 
     const reviewData = {
       id: review._id.toString(),
       type,
       oid,
       rating: typeof review.rating === 'number' ? review.rating / 2 : 0,
-      text: review.text || '',
+      text: review.deleted ? '[Comment deleted]' : review.text || '',
+      parentId: review.item?.type === 'review' ? review.item.oid : null,
       createdAt: review.createdAt,
       updatedAt: review.updatedAt,
       userName,
       userOid: review.user?.oid || null,
-      canEdit: !!(req.session?.user?.oid && review.user?.oid && req.session.user.oid === review.user.oid),
+      canEdit: review.item?.type !== 'review' && !!(req.session?.user?.oid && review.user?.oid && req.session.user.oid === review.user.oid),
       media,
     };
 
