@@ -2,7 +2,7 @@
 // Writes only to a uniquely named temporary database and drops that database on exit.
 import { spawn, execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { ObjectId } from 'mongodb';
+import { ObjectId, Double } from 'mongodb';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
@@ -11,6 +11,7 @@ const auditDbName = `hearsay_audit_${Date.now()}`;
 process.env.MONGO_DB_NAME = auditDbName;
 const { connectMongo, closeMongo } = await import('../server/dbAPI.js');
 const { applySchemas } = await import('../server/scripts/apply-schemas.mjs');
+const { checkTrackRatingMigration } = await import('./track-ratings.mjs');
 const database = await connectMongo();
 const port = 5184;
 const origin = `http://127.0.0.1:${port}`;
@@ -43,6 +44,8 @@ async function exchangeGoogle(code, intent = 'signin') {
 }
 try {
   await applySchemas();
+  await checkTrackRatingMigration(database);
+  record('track rating migration', { valuesPreserved: true, dryRun: true, invalidDataStopsBeforeChanges: true, idempotent: true });
   execFileSync(process.execPath, ['server/scripts/sync-schema-scripts.mjs', '--check']);
   server = spawn(process.execPath, ['--import', './tests/fixtures/providers.mjs', 'server/index.js'], {
     env: { ...process.env, PORT: String(port), NODE_ENV: 'development', SESSION_COOKIE_SECURE: 'false', SPOTIFY_CLIENT_ID: 'audit-client', SPOTIFY_CLIENT_SECRET: 'audit-secret', GOOGLE_CLIENT_ID: 'audit-client', GOOGLE_CLIENT_SECRET: 'audit-secret' },
@@ -224,20 +227,31 @@ try {
   const { CRUD } = await import('../server/dbAPI.js');
   assert.equal((await CRUD.updateById('users', userId, { firstname: 'Updated Audit' })).firstname, 'Updated Audit');
   assert.equal(await CRUD.updateById('users', String(new ObjectId()), { firstname: 'Nobody' }), null);
-  const badRatings = [null, [], { 'audit-track': 6 }, { 'audit-track': '4' }, { 'audit-track': 3.2 }];
+  const badRatings = [null, {}, { 'audit-track': 4 }, [4], [{ trackId: 'audit-track', rating: 4 }, { trackId: 'audit-track', rating: 3 }], [{ trackId: 'audit-track', rating: 4, extra: true }], [{ trackId: 'audit-track' }], [{ trackId: 'audit-track', rating: 6 }], [{ trackId: 'audit-track', rating: '4' }], [{ trackId: 'audit-track', rating: 3.2 }]];
   for (const trackRatings of badRatings) {
     const invalid = await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', rating: 4, trackRatings } });
     assert.equal(invalid.status, 400);
     assert.equal(invalid.data.error, 'invalid_track_ratings');
   }
-  const album = await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', rating: 4, trackRatings: { 'audit-new-track': 4.5 } } });
+  const album = await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', rating: 4, trackRatings: [{ trackId: 'audit-new-track', rating: 4.5 }] } });
   assert.equal(album.status, 200);
-  assert.equal(album.data.review.trackRatings['audit-new-track'], 4.5);
+  assert.equal(album.data.review.trackRatings[0].rating, 4.5);
+  assert.equal(album.data.review.trackRatings[0].trackId, 'audit-new-track');
+  const arrayAlbum = await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', rating: 4, trackRatings: [{ trackId: 'audit-new-track', rating: 4 }] } });
+  assert.equal(arrayAlbum.status, 200);
+  assert.deepEqual(arrayAlbum.data.review.trackRatings, [{ trackId: 'audit-new-track', rating: 4 }]);
+  const rawAlbum = await database.collection('reviews').findOne({ 'user.oid': userId, 'item.oid': 'audit-new-album' }, { promoteValues: false });
+  assert.ok(rawAlbum.trackRatings[0].rating instanceof Double);
+  assert.deepEqual((await request('/api/reviews/my?type=album&oid=audit-new-album')).data.review.trackRatings, arrayAlbum.data.review.trackRatings);
+  assert.equal((await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', text: 'Preserve track snapshot' } })).status, 200);
+  assert.deepEqual((await database.collection('reviews').findOne({ _id: rawAlbum._id })).trackRatings, arrayAlbum.data.review.trackRatings);
+  assert.equal((await request('/api/reviews/upsert', { method: 'POST', body: { type: 'album', oid: 'audit-new-album', rating: 4, trackRatings: [] } })).status, 200);
+  assert.deepEqual((await database.collection('reviews').findOne({ _id: rawAlbum._id })).trackRatings, []);
   const cachedAlbum = await database.collection('albums').findOne({ spotifyAlbumId: 'audit-new-album' });
   const newSong = await database.collection('songs').findOne({ spotifyTrackID: 'audit-new-track' });
   assert.ok(newSong);
   assert.ok(cachedAlbum.songs.some(song => song.oid === String(newSong._id)), 'new song must be linked during its first album backfill');
-  record('album track ratings and first backfill', { status: album.status, persistedTrackRating: album.data.review.trackRatings['audit-new-track'], songLinked: true, invalidPayloadsRejected: badRatings.length });
+  record('album track ratings and first backfill', { status: album.status, persistedTrackRating: album.data.review.trackRatings[0].rating, songLinked: true, invalidPayloadsRejected: badRatings.length });
   for (const [id, status] of [['upstream-rate-limit', 429], ['upstream-missing', 404]]) {
     const upstream = await request(`/api/spotify/track/${id}`);
     assert.equal(upstream.status, status);
@@ -381,7 +395,7 @@ try {
   const deleteId = new ObjectId(deleteOid), ownedReviews = [];
   const exportText = '=SUM(1,2)\n"Quoted", café Ω Привет\n' + 'wrapping '.repeat(700) + 'END_OF_REVIEW';
   for (const [type, itemOid] of [['song', 'audit-track'], ['album', 'audit-album'], ['artist', 'audit-artist']]) {
-    const review = { _id: new ObjectId(), comments: [], votes: [], createdAt: now, updatedAt: now, dislikes: 0, likes: 0, item: { type, oid: itemOid }, text: exportText, title: 'Private export review', type: 'review', user: { oid: deleteOid }, rating: 9, ...(type === 'album' ? { trackRatings: { 'audit-track': 3.5 } } : {}) };
+    const review = { _id: new ObjectId(), comments: [], votes: [], createdAt: now, updatedAt: now, dislikes: 0, likes: 0, item: { type, oid: itemOid }, text: exportText, title: 'Private export review', type: 'review', user: { oid: deleteOid }, rating: 9, ...(type === 'album' ? { trackRatings: [{ trackId: 'audit-track', rating: new Double(3.5) }] } : {}) };
     await database.collection('reviews').insertOne(review); ownedReviews.push(review._id);
     await database.collection(type === 'song' ? 'songs' : type === 'album' ? 'albums' : 'artists').updateMany({}, { $push: { reviews: { review_oid: String(review._id), user_oid: deleteOid } } });
   }

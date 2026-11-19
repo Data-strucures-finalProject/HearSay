@@ -1,82 +1,87 @@
 # HearSay
 
-HearSay is a music discovery and review app using React, Vite, Express and the native MongoDB driver. Users browse Spotify music, review songs/albums/artists, vote on reviews and discuss them in collapsible reply threads.
+HearSay is a music discovery and review app built with React, Vite, Express, and MongoDB. Browse Spotify music, rate songs, albums, and artists, and discuss reviews in threaded conversations. Discover and Community show charts and tables based on the app’s data.
 
-Discover and Community provide searchable music and review tables with charts. Popular on Spotify ranks stored artists by follower count. Admin provides a protected user/review integrity table.
+## Run locally with Docker
 
-## Documentation
+Docker Desktop or Docker Engine with the Compose plugin is the recommended setup. Start Docker, then run the commands below from the repository root. You need ports **8080**, **5174**, and **27017** available. Node.js on your host is required only for the native development option.
+
+1. Create the local configuration file. If you already have a `.env` file, keep it and check the settings in step 2.
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+   On macOS or Linux, use `cp .env.example .env`.
+
+2. Edit `.env` for your local environment.
+
+   | Setting | Local value or purpose |
+   | --- | --- |
+   | `MONGO_HOST`, `MONGO_DB_NAME` | Keep `mongodb` and `hearsay` for Docker. Set your own `MONGO_PASSWORD` on a fresh database. If the database already exists, use its existing credentials. |
+   | `SESSION_SECRET` | Set a long random value for signing sessions. |
+   | `SESSION_COOKIE_SECURE` | Set to `false` for local HTTP. Use `true` on HTTPS. |
+   | `API_ORIGIN` | Use `http://localhost:8080`. Access the app at this same address. |
+   | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Required for Spotify search and live music details. The app can start without them. |
+   | `DEFAULT_ADMIN_EMAIL`, `DEFAULT_ADMIN_PASSWORD` | Set these before first startup if you want custom admin credentials. Later changes to these settings leave the existing admin account in place. |
+   | Google sign-in (optional) | Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `VITE_GOOGLE_CLIENT_ID` using the same Google OAuth client. Register `http://localhost:8080/auth/callback` and use it as `VITE_GOOGLE_REDIRECT_URI`. Local email/password registration works without Google. |
+
+3. Build and start MongoDB, the API, and the web frontend.
+
+   ```sh
+   docker compose up --build -d mongodb backend frontend
+   docker compose ps
+   ```
+
+4. When the backend and frontend are healthy, open **http://localhost:8080**. Create a local account from the sign-in page to write reviews. Fresh databases start without sample reviews. An optional demo seed is documented in [MongoDB operations](db/mongo-cli.md#demo-seed).
+
+To validate the database or diagnose a startup failure from the repository root, use:
+
+```sh
+docker compose exec -T backend npm run db:validate
+docker compose logs --tail 100 mongodb backend frontend
+```
+
+Run `docker compose down` to stop the app. MongoDB data persists in `db/data`. After changing Google frontend settings, rebuild the frontend with `docker compose up --build -d frontend`.
+
+## Run natively for development
+
+Use Node.js **20.19+** or **22.12+** with npm. Run MongoDB separately, or start just the project’s MongoDB container. If switching from the full Docker setup, stop it with `docker compose down` first to free the shared ports and container name.
+
+1. From the repository root, create and configure `.env` as described above if needed, then run `docker compose -f compose.db.yml up -d`. Skip this command if you already have a reachable MongoDB server.
+2. From the repository root, set up the development environment:
+
+   ```powershell
+   Copy-Item .env hearsay/.env.development
+   Set-Location hearsay
+   npm ci
+   ```
+
+   On macOS or Linux, use `cp` and `cd`. Keep your existing `hearsay/.env.development` if you already have one.
+3. Edit `hearsay/.env.development`. Set `NODE_ENV=development`, `MONGO_HOST=localhost` for the local MongoDB container, `API_ORIGIN=http://localhost:5173`, and `SESSION_COOKIE_SECURE=false`. Keep the same MongoDB credentials and database name as the server. If using Google sign-in, register `http://localhost:5173/auth/callback` and set `VITE_GOOGLE_REDIRECT_URI` to that address.
+4. From `hearsay`, apply the database schemas and run both development servers:
+
+   ```sh
+   npm run db:apply-schemas
+   npm run dev:all
+   ```
+
+Open **http://localhost:5173**. Vite proxies `/api` to Express on port **5174**. If the browser opens on another port because 5173 is occupied, free port 5173 and restart the dev servers so the configured origin and Google callback remain valid. Stop the servers with Ctrl+C. To stop a MongoDB container started for native development, run `docker compose -f compose.db.yml down` from the repository root.
+
+## Upgrade an existing database
+
+If your database has old album reviews with `trackRatings` stored as maps, run the [one-time track-rating migration](db/mongo-cli.md#upgrade-existing-track-ratings) before starting the updated app. It preserves review content and rating values. Fresh installs and previously migrated databases can use the startup steps above directly.
+
+## Build and verify
+
+From `hearsay`, run `npm run lint` and `npm run build`. The production client is written to `dist/`. Use Compose to serve it with the API proxy, or configure an equivalent proxy in your deployment. Run `npm run db:validate` from `hearsay` for a read-only check of the database configured for native development.
+
+On Windows, run `.\scripts\tests\run.cmd --setup` from the repository root to install temporary test tools in the backend container and run the regression suites. See the [developer test guide](scripts/tests/README.md) for individual suites.
+
+## Project references
 
 - [Backend API and data model](docs/BACKEND_REFERENCE.md)
 - [Frontend routes and behavior](docs/FRONTEND_REFERENCE.md)
 - [Architecture and diagrams](docs/ARCHITECTURE.md)
-- [Database setup, import/export and backups](db/mongo-cli.md)
+- [MongoDB setup, upgrades, and backups](db/mongo-cli.md)
 - [Developer tests](scripts/tests/README.md)
-
-## Prerequisites
-
-Docker Desktop/Engine with Compose, or Node.js 20.19+ / 22.12+ with npm and an accessible MongoDB server. The locked Vite version is 7.2.1. Spotify credentials are needed for music features; Google credentials are optional when using local sign-in.
-
-## Docker setup
-
-From the repository root (PowerShell):
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Edit `.env`: replace the database password and session secret, add Spotify credentials, and set Google credentials if using Google login. Use server variables `GOOGLE_CLIENT_SECRET` and `SPOTIFY_CLIENT_SECRET`; secrets must not have a `VITE_` prefix. For HTTP at localhost:8080 set `SESSION_COOKIE_SECURE=false`; use true with HTTPS. Set `API_ORIGIN` to the actual browser origin. Google's registered redirect URI must match the browser origin plus `/auth/callback`.
-
-```powershell
-docker compose up --build -d mongodb backend frontend
-docker compose ps
-```
-
-Open http://localhost:8080. The backend is exposed on port 5174. Frontend Nginx serves the SPA and proxies `/api` to the backend. The optional `nginx-rev-proxy` service is Nginx Proxy Manager (80/443, management UI 8181); public host/TLS configuration is separate.
-
-The backend applies validators before starting. Sample-data import is a separate operation. Data persists in `db/data`. `docker compose down` stops containers without deleting that directory.
-
-Backend startup installs the analytical MongoDB views. Database credentials need create-view and `collMod` permissions; see [database setup](db/mongo-cli.md).
-
-Frontend configuration is embedded at build time. The Dockerfile forwards the Google client ID and redirect URI build arguments. AuthPage and review clients default to same-origin `/api`; see the frontend reference for optional overrides.
-
-Profile supports local passwords, Google linking, independent choices to copy Google names/email, and saved login email management. Removing the Google email also disconnects Google sign-in. Startup preflights and applies strict MongoDB validators; active aliases and cached Spotify identities have unique indexes. See the backend reference for fields, routes and legacy-schema upgrade commands.
-
-Profile also offers CSV and PDF downloads of account details, reviews, comments and ratings, plus permanent account deletion with an explicit confirmation. Exports exclude credentials. Deletion removes owned review threads, votes and sessions, and anonymizes comments within other users' threads. Shared music metadata remains.
-
-Set `DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` in `.env` to initialize the default admin once (defaults: `admin@hearsay.com` / `password`). Existing default-admin credentials are never reset on restart. Use a stronger initial password before public deployment. Only administrators see the Admin tab; the backend also enforces the admin role on its API.
-
-## Native development
-
-From the root, configure `.env` for MongoDB and run:
-
-```powershell
-docker compose -f compose.db.yml up -d
-Copy-Item .env.example hearsay/.env.development
-Set-Location hearsay
-npm ci
-```
-
-Edit `hearsay/.env.development`: set `NODE_ENV=development`, `MONGO_HOST=localhost`, the matching MongoDB credentials, `SESSION_COOKIE_SECURE=false`, `API_ORIGIN=http://localhost:5173,http://127.0.0.1:5173`, `VITE_API_BASE=/api`, and `VITE_GOOGLE_REDIRECT_URI=http://localhost:5173/auth/callback` if using Google. Keep `MONGO_DB_NAME=hearsay` explicit. Run npm commands from `hearsay`, because backend env paths are relative to the working directory.
-
-```powershell
-npm run db:apply-schemas
-npm run dev:all
-```
-
-Open http://localhost:5173. Vite proxies `/api` to localhost:5174. On Linux use `cp`/`cd` in place of `Copy-Item`/`Set-Location`. Do not run both Compose configurations together: container names, ports and static addresses overlap. Schema application requires database privileges to create/modify validators.
-
-## Build and verification
-
-From `hearsay`:
-
-```powershell
-npm run build
-npm run lint
-npm run db:validate
-```
-
-Build output is `dist/`. `npm run preview` has no configured API proxy and is not the complete deployment. `npm run start:backend` uses production mode; supply `.env.production` or process variables and serve the frontend behind an `/api` proxy.
-
-`db:validate` checks the configured database without modifying it and exits nonzero on schema or reference errors. Demo seed/credential storage and Docker validation commands are documented in [database setup](db/mongo-cli.md#demo-seed).
-
-Optional developer tests live in [scripts/tests](scripts/tests/README.md). Run `.\scripts\tests\run.cmd --setup` from PowerShell or Command Prompt to install temporary Docker test tools and run everything. Select individual suites with `run.cmd runtime`, `run.cmd browser` or `run.cmd admin` from that folder.

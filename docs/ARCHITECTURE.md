@@ -40,10 +40,12 @@ flowchart LR
     Discussion --> Threads[Review documents linked to parent reviews]
     Album[Album track submission] --> Songs[Save each rated song review]
     Songs --> Average[Average rated tracks]
-    Average --> AlbumReview[Save album rating]
+    Average --> AlbumReview[Save album rating and track snapshot]
 ```
 
-At least one track is required. Song records are saved separately. Writes are sequential
+At least one track is required. The album review stores a `trackRatings` array of
+`{ trackId, rating }` entries. Individual song reviews supply song-level ratings.
+Writes are sequential
 and not transactional. Guests on protected routes redirect to auth; guests
 submitting on public media pages are rejected by the API and usually see alerts.
 
