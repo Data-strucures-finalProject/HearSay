@@ -23,6 +23,7 @@ Run these optional suites from PowerShell or Command Prompt with the app contain
 | `runtime.mjs` | API, database, authentication, admin roles, email management, export and deletion regressions |
 | `discussions.mjs` | Runtime discussion checks: migration, threaded references, paging, permissions, retry idempotency, votes, deletion and analytical counts |
 | `schemas.mjs` | Runtime schema contracts: valid/invalid documents, BSON types, identity indexes, session envelopes, strict legacy updates, unchanged validators after failed preflight and drift detection |
+| `track-ratings.mjs` | Runtime migration checks: dry-run, unchanged data/validators after failed preflight, preserved review values, uniform BSON Double scores, idempotence and legacy-map rejection after migration |
 | `insights.mjs` | All ten real MongoDB views/API contracts plus current-source browser tests for Discover, Community and admin integrity |
 | `fixtures/providers.mjs` | Google/Spotify responses preloaded only into the isolated runtime test server |
 | `hearsay/server/scripts/validate-database.mjs` (repository root) | Read-only validation of the configured database; run `docker compose exec -T backend npm run db:validate` |

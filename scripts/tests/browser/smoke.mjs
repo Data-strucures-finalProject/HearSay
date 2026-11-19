@@ -78,7 +78,7 @@ try {
   await page.getByRole('button', { name: 'Rate 4 stars', exact: true }).last().press('Enter');
   await page.getByRole('button', { name: 'Submit Ratings', exact: true }).click();
   await page.waitForTimeout(300);
-  assert.deepEqual(submissions.find(payload => payload.type === 'album').trackRatings, { 'audit-track': 4 });
+  assert.deepEqual(submissions.find(payload => payload.type === 'album').trackRatings, [{ trackId: 'audit-track', rating: 4 }]);
   results.push({ check: 'album track-rating request', songReviewSubmitted: submissions.some(payload => payload.type === 'song'), albumTrackRatingsForwarded: true });
   const authBusResult = await page.evaluate(async code => {
     const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }));
