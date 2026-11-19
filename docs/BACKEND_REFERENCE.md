@@ -84,7 +84,7 @@ Example body: `{"type":"song","oid":"spotify-id","rating":4.5,"text":"A review"}
 
 Type must be song/album/artist; oid is a nonempty string. Ratings in 0.5..5 are rounded to half stars and stored as doubled BSON Int32 (1..10). Responses convert numeric ratings to stars. Text-only inserts use 0 for unrated. Invalid ratings are ignored if usable text exists. Text is trimmed with a maximum of 1,000 whitespace-separated words.
 
-The API accepts album `trackRatings` objects with nonblank track IDs and numeric half-star values in 0.5..5. Nonobjects, arrays, invalid values and trackRatings on other media types return 400 invalid_track_ratings. Song reviews are submitted separately by the album page.
+Album `trackRatings` use arrays of `{ trackId, rating }` entries with unique track IDs and numeric half-star values in 0.5..5. Each stored score is BSON Double, including whole-star values. Requests and responses use arrays exclusively; legacy maps (`{ trackId: score }`) are rejected. Malformed entries, duplicate IDs, extra fields, invalid values and trackRatings on other media types return 400 invalid_track_ratings. Omitting trackRatings preserves the snapshot; an empty array clears it. Song reviews are submitted separately by the album page and remain the source of song-level ratings and analytics.
 
 Upserts attempt to maintain `users.reviewIds`, media review arrays, cached Spotify documents and artist/album/song links. These writes are not transactional; errors in related writes often log a warning while the review succeeds. Metadata is saved on review writes, not every Spotify GET. Media rating/like fields are not maintained as community aggregates.
 
@@ -127,7 +127,7 @@ Database defaults to `hearsay`; collection names are lowercase.
 
 `dbAPI.Sessions` points to `sessions`; middleware defaults to `expressSessions`. User references in reviews are internal ObjectId strings; media-review item IDs are Spotify IDs, while comment item IDs are parent-review ObjectId strings. Media references usually use internal ObjectId strings with some Spotify-ID fallbacks. They are application-maintained, not foreign keys. Media likes/dislikes/rating are string placeholders in active schemas.
 
-**Canonical schema source:** `db/schemas/schema-HearSay-*.json`, loaded by `server/scripts/apply-schemas.mjs`. Compose mounts it at `/app/db-schemas`; the backend command applies six validators before startup. Native startup requires an explicit `npm run db:apply-schemas`. Existing data and duplicate Spotify identities are checked before any validator changes.
+**Canonical schema source:** `db/schemas/schema-HearSay-*.json`, loaded by `server/scripts/apply-schemas.mjs`. Compose mounts the schema files at `/app/db-schemas` and applies the six validators before starting the API. Native development uses `npm run db:apply-schemas`. Schema application checks existing documents and duplicate Spotify identities before changing validators. For databases that still store track ratings as maps, follow the [one-time migration](../db/mongo-cli.md#upgrade-existing-track-ratings) before applying schemas.
 
 `create-*.js` are generated manual collection-creation scripts with identical validators. Regenerate them with `npm run db:sync-schema-scripts`; the runtime suite checks synchronization. `HearSay.*.json` are historical data exports, not schema definitions.
 

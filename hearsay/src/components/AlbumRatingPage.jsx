@@ -180,7 +180,7 @@ export default function AlbumRatingPage() {
         type: 'album',
         oid: albumId,
         rating: sanitizeRating(averageRating),
-        trackRatings: sanitizedRatings, // Include individual track ratings for reference
+        trackRatings: Object.entries(sanitizedRatings).map(([trackId, rating]) => ({ trackId, rating })),
       });
 
       // Show success message and reset editing state

@@ -4,6 +4,8 @@ The app defaults to database `hearsay` and lowercase collections `users`, `revie
 
 ## Schema setup
 
+Album review `trackRatings` are arrays of `{ trackId, rating }` entries. Track IDs are unique per review; scores are BSON Double values in half-star steps from 0.5 to 5. This snapshot supplements individual song reviews and does not change song analytics.
+
 Compose applies `schema-HearSay-*.json` validators through the backend startup command. To reapply them explicitly:
 
 ```powershell
@@ -23,6 +25,32 @@ Backend startup installs analytical views in the configured database. Run `docke
 Validation uses `strict` with action `error`, so all inserts and updates must satisfy the current rules, including updates to already-invalid records. See [MongoDB validation levels](https://www.mongodb.com/docs/manual/core/schema-validation/specify-validation-level/).
 
 For an older database, `npm run db:normalize-schema-defaults` makes existing defaults explicit: missing roles become `user`, missing author lists are reconstructed from owned reviews, and missing vote arrays are initialized only when both vote counters are zero. It does not reset data, change credentials, infer vote identities or repair arbitrary invalid records. Run it before applying the stricter schemas, and inspect any remaining preflight failures. Legacy `HearSay.*.json` exports are historical data snapshots and may require migration before import; the demo seed utility produces the current model.
+
+## Upgrade existing track ratings
+
+Use this one-time migration for databases with album reviews that store `trackRatings` as maps. Stop the API and any other database writers before applying it. The first migration command checks the data without writing. The `--apply` command preserves review IDs, timestamps, track IDs, and rating values, and installs the updated strict validator. Invalid data stops the preflight. If interrupted, rerun the migration before restarting writers.
+
+With Docker, run from the repository root:
+
+```sh
+docker compose stop backend
+docker compose up -d mongodb
+docker compose build backend frontend
+docker compose run --rm --no-deps backend npm run db:migrate-track-ratings
+docker compose run --rm --no-deps backend npm run db:migrate-track-ratings -- --apply
+docker compose up -d backend frontend
+docker compose exec -T backend npm run db:validate
+```
+
+For native development, stop the app and run from `hearsay` with the database configured:
+
+```sh
+npm run db:migrate-track-ratings
+npm run db:migrate-track-ratings -- --apply
+npm run db:apply-schemas
+npm run db:validate
+npm run dev:all
+```
 
 ## Prerequisites
 

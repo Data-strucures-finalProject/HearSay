@@ -163,21 +163,27 @@ db.createCollection("reviews", {
               "pattern": "^[A-Za-z0-9-]{8,80}$"
             },
             "trackRatings": {
-              "bsonType": "object",
-              "patternProperties": {
-                "^[A-Za-z0-9-]{1,64}$": {
-                  "bsonType": [
-                    "int",
-                    "long",
-                    "double",
-                    "decimal"
-                  ],
-                  "minimum": 0.5,
-                  "maximum": 5,
-                  "multipleOf": 0.5
-                }
-              },
-              "additionalProperties": false
+              "bsonType": "array",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "trackId",
+                  "rating"
+                ],
+                "properties": {
+                  "trackId": {
+                    "bsonType": "string",
+                    "pattern": "^[A-Za-z0-9-]{1,64}$"
+                  },
+                  "rating": {
+                    "bsonType": "double",
+                    "minimum": 0.5,
+                    "maximum": 5,
+                    "multipleOf": 0.5
+                  }
+                },
+                "additionalProperties": false
+              }
             }
           },
           "additionalProperties": false,
@@ -402,6 +408,42 @@ db.createCollection("reviews", {
             },
             "in": {
               "$and": [
+                {
+                  "$let": {
+                    "vars": {
+                      "trackIds": {
+                        "$map": {
+                          "input": {
+                            "$cond": [
+                              {
+                                "$isArray": "$trackRatings"
+                              },
+                              "$trackRatings",
+                              []
+                            ]
+                          },
+                          "as": "track",
+                          "in": "$$track.trackId"
+                        }
+                      }
+                    },
+                    "in": {
+                      "$eq": [
+                        {
+                          "$size": "$$trackIds"
+                        },
+                        {
+                          "$size": {
+                            "$setUnion": [
+                              "$$trackIds",
+                              []
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
                 {
                   "$let": {
                     "vars": {

@@ -176,7 +176,7 @@ async function apply() {
       if (item.type === 'album') {
         const album = catalog.albums.find(a => a.id === item.oid);
         const ids = new Set(album.tracks.items.map(t => t.id));
-        body.trackRatings = Object.fromEntries(plan.filter(p => p.type === 'song' && p.accountIndex === item.accountIndex && ids.has(p.oid)).map(p => [p.oid, p.rating]));
+        body.trackRatings = plan.filter(p => p.type === 'song' && p.accountIndex === item.accountIndex && ids.has(p.oid)).map(p => ({ trackId: p.oid, rating: p.rating }));
       }
       const result = await api(account, '/api/reviews/upsert', body);
       assert.ok(result.review?._id, 'Review API did not return an ID');
