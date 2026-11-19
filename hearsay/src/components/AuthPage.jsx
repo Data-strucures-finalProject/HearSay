@@ -8,6 +8,8 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [firstname, setFirstname] = useState('');
+  const [lastname, setLastname] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -31,6 +33,10 @@ export default function AuthPage() {
       setError('Passwords do not match.');
       return;
     }
+    if (mode === 'signup' && (!firstname.trim() || !lastname.trim())) {
+      setError('Please enter both your first and last name.');
+      return;
+    }
     setLoading(true);
     try {
       const endpoint = `${API_BASE}/auth/local/${mode === 'signup' ? 'signup' : 'login'}`;
@@ -38,16 +44,19 @@ export default function AuthPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...(mode === 'signup' ? { firstname: firstname.trim(), lastname: lastname.trim() } : {}) }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data.ok) {
         const errCode = data.error || 'unknown_error';
-        if (errCode === 'email_in_use') setError('An account with that email already exists.');
+        if (resp.status === 429) setError('Too many attempts. Please wait and try again.');
+        else if (errCode === 'email_in_use') setError('An account with that email already exists.');
         else if (errCode === 'weak_password') setError(`Password must be at least ${data.minLength || 6} characters.`);
         else if (errCode === 'invalid_credentials') setError('Invalid email or password.');
         else if (errCode === 'no_local_account') setError('No local account. Try registering or linking first.');
         else if (errCode === 'invalid_email') setError('Invalid email address.');
+        else if (errCode === 'firstname_required') setError('Please enter your first name.');
+        else if (errCode === 'lastname_required') setError('Please enter your last name.');
         else setError('Authentication failed. Please try again.');
         return;
       }
@@ -110,6 +119,18 @@ export default function AuthPage() {
             </div>
 
             <form onSubmit={handleLocalSubmit} className="space-y-4">
+              {mode === 'signup' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="auth-firstname" className="block mb-2 text-black dark:text-white">First name</label>
+                    <input id="auth-firstname" type="text" value={firstname} onChange={e => setFirstname(e.target.value)} maxLength={100} className="w-full border-2 border-black dark:border-white bg-white dark:bg-gray-800 text-black dark:text-white px-3 py-2" placeholder="First name" required />
+                  </div>
+                  <div>
+                    <label htmlFor="auth-lastname" className="block mb-2 text-black dark:text-white">Last name</label>
+                    <input id="auth-lastname" type="text" value={lastname} onChange={e => setLastname(e.target.value)} maxLength={100} className="w-full border-2 border-black dark:border-white bg-white dark:bg-gray-800 text-black dark:text-white px-3 py-2" placeholder="Last name" required />
+                  </div>
+                </div>
+              )}
               <div>
                 <label htmlFor="auth-email" className="block mb-2 text-black dark:text-white">Email</label>
                 <input

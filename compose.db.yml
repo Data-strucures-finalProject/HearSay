@@ -13,7 +13,7 @@ services:
     image: mongo:latest # Or specify a version like mongo:6.0
     container_name: hearsay_mongodb
     ports:
-      - "27017:27017" # Map host port 27017 to container port 27017
+      - "127.0.0.1:27017:27017"
     volumes:
       - ./db/data:/data/db # Persist data in a named volume
     environment:

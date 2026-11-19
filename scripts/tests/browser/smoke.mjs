@@ -4,6 +4,7 @@ import { chromium } from '/tmp/hearsay-browser/node_modules/playwright/index.mjs
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { exerciseRatingLayout } from './rating-layout.mjs';
+import { checkSpotifyBrowsing } from './spotify-browsing.mjs';
 
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-browser', args: ['--no-sandbox', '--disable-dev-shm-usage'] });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -12,6 +13,7 @@ const failures = [];
 page.on('pageerror', e => failures.push(e.message));
 const results = [];
 try {
+  results.push(await checkSpotifyBrowsing(browser, 'http://frontend'));
   for (const path of ['/', '/auth', '/recent-reviews', '/random', '/profile', '/my-reviews', '/search?q=radiohead']) {
     const response = await page.goto('http://frontend' + path, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1800);

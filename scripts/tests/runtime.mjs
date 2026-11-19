@@ -20,16 +20,16 @@ let cookie = '';
 let serverLogs = '';
 const results = [];
 function record(check, details) { results.push({ check, ...details }); }
-async function request(path, { method = 'GET', body, authenticated = true } = {}) {
+async function request(path, { method = 'GET', body, authenticated = true, clientIp } = {}) {
   const response = await fetch(origin + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(authenticated && cookie ? { Cookie: cookie } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(authenticated && cookie ? { Cookie: cookie } : {}), ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const setCookie = response.headers.get('set-cookie');
   if (authenticated && setCookie) cookie = setCookie.split(';')[0];
   const data = await response.json().catch(() => null);
-  return { status: response.status, data };
+  return { status: response.status, data, retryAfter: response.headers.get('retry-after') };
 }
 async function prepareGoogleAuth(intent = 'signin') {
   const code_verifier = 'audit-private-verifier';
@@ -46,9 +46,18 @@ try {
   await applySchemas();
   await checkTrackRatingMigration(database);
   record('track rating migration', { valuesPreserved: true, dryRun: true, invalidDataStopsBeforeChanges: true, idempotent: true });
+  const { rejectsCrossSiteMutation, validateProductionOrigins } = await import('../server/security.js');
+  validateProductionOrigins(['https://hearsay.gripe', 'http://localhost:8080'], 'true');
+  assert.equal(rejectsCrossSiteMutation({ method: 'POST', headers: { origin: 'https://evil.example' } }, ['https://hearsay.gripe']), true);
+  assert.equal(rejectsCrossSiteMutation({ method: 'POST', headers: { origin: 'https://hearsay.gripe' } }, ['https://hearsay.gripe']), false);
+  assert.equal(rejectsCrossSiteMutation({ method: 'POST', headers: { 'sec-fetch-site': 'cross-site' } }, ['https://hearsay.gripe']), true);
+  assert.equal(rejectsCrossSiteMutation({ method: 'GET', headers: { origin: 'https://evil.example' } }, ['https://hearsay.gripe']), false);
+  assert.throws(() => validateProductionOrigins([], 'true'));
+  assert.throws(() => validateProductionOrigins(['https://hearsay.gripe'], 'false'));
+  record('production security configuration', { secureCookieRequired: true, originAllowlistValidated: true, crossSiteMutationsRejected: true });
   execFileSync(process.execPath, ['server/scripts/sync-schema-scripts.mjs', '--check']);
   server = spawn(process.execPath, ['--import', './tests/fixtures/providers.mjs', 'server/index.js'], {
-    env: { ...process.env, PORT: String(port), NODE_ENV: 'development', SESSION_COOKIE_SECURE: 'false', SPOTIFY_CLIENT_ID: 'audit-client', SPOTIFY_CLIENT_SECRET: 'audit-secret', GOOGLE_CLIENT_ID: 'audit-client', GOOGLE_CLIENT_SECRET: 'audit-secret' },
+    env: { ...process.env, PORT: String(port), NODE_ENV: 'development', TRUST_PROXY: 'loopback', SESSION_COOKIE_SECURE: 'false', MONGO_APP_USERNAME: '', MONGO_APP_PASSWORD: '', MONGO_APP_AUTH_SOURCE: '', SPOTIFY_CLIENT_ID: 'audit-client', SPOTIFY_CLIENT_SECRET: 'audit-secret', GOOGLE_CLIENT_ID: 'audit-client', GOOGLE_CLIENT_SECRET: 'audit-secret' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   // Consume logs without displaying OAuth tokens, session IDs, or review content.
@@ -75,6 +84,25 @@ try {
   await bootstrapFixtures.drop();
   const adminBefore = await database.collection('users').findOne({ isDefaultAdmin: true });
   assert.equal(adminBefore.role, 'admin');
+  const loginPath = '/api/auth/local/login';
+  const signupPath = '/api/auth/local/signup';
+  const adminCredentials = { email: adminBefore.email, password: process.env.DEFAULT_ADMIN_PASSWORD || 'password' };
+  const attempts = (path, clientIp, body = { email: 'invalid', password: 'fixture-password', firstname: 'Audit', lastname: 'Tester' }) => request(path, { method: 'POST', authenticated: false, clientIp, body });
+  const clientIp = '2001:db8:aa00:1200::1';
+  assert.equal((await attempts(loginPath, clientIp, adminCredentials)).status, 200, 'successful login should not consume the failure budget');
+  for (let count = 0; count < 20; count++) assert.equal((await attempts(loginPath, clientIp)).status, 400);
+  const throttledLogin = await attempts(loginPath, '2001:db8:aa00:12ff::2');
+  assert.equal(throttledLogin.status, 429, 'other IPv6 addresses in the same subnet share the limit');
+  assert.equal(throttledLogin.data.error, 'rate_limited');
+  assert.ok(Number(throttledLogin.retryAfter) > 0);
+  assert.equal((await attempts(loginPath, '198.51.100.12', adminCredentials)).status, 200, 'a separate client can still sign in');
+  for (let count = 0; count < 10; count++) assert.equal((await attempts(signupPath, clientIp)).status, 400, 'signup has a separate budget');
+  const throttledSignup = await attempts(signupPath, clientIp);
+  assert.equal(throttledSignup.status, 429);
+  assert.equal(throttledSignup.data.error, 'rate_limited');
+  assert.ok(Number(throttledSignup.retryAfter) > 0);
+  assert.equal((await attempts(signupPath, '198.51.100.12')).status, 400, 'a separate client can still register');
+  record('authentication rate limits', { successfulLoginExempt: true, ipv6SubnetGrouping: true, signupAndLoginSeparate: true, retryAfter: true });
   const { mountAccountData } = await import('../server/accountData.js');
   let accountGuard;
   mountAccountData({ use: handler => { accountGuard = handler; }, get() {}, delete() {} }, database, { sessionName: 'fixture', sessionsCollection: 'expressSessions' });
@@ -118,10 +146,11 @@ try {
   record('health', await request('/api/health'));
   record('database ping', { status: (await request('/api/test')).status });
   record('guest profile denied', await request('/api/profile', { authenticated: false }));
-  record('invalid signup email', await request('/api/auth/local/signup', { method: 'POST', body: { email: 'invalid', password: 'example-password' } }));
-  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'x'.repeat(250) + '@example.invalid', password: 'example-password' } })).status, 400);
+  record('invalid signup email', await request('/api/auth/local/signup', { method: 'POST', body: { email: 'invalid', password: 'example-password', firstname: 'Audit', lastname: 'Reviewer' } }));
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'x'.repeat(250) + '@example.invalid', password: 'example-password', firstname: 'Audit', lastname: 'Reviewer' } })).status, 400);
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'missing-name@example.invalid', password: 'example-password' } })).status, 400);
   const email = 'reviewer@example.invalid';
-  const signup = await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'example-password', role: 'admin', isDefaultAdmin: true } });
+  const signup = await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'example-password', firstname: 'Audit', lastname: 'Reviewer', role: 'admin', isDefaultAdmin: true } });
   assert.equal(signup.status, 200);
   assert.equal(signup.data.user.role, 'user');
   assert.equal((await request('/api/admin/overview')).status, 403);
@@ -252,22 +281,37 @@ try {
   assert.ok(newSong);
   assert.ok(cachedAlbum.songs.some(song => song.oid === String(newSong._id)), 'new song must be linked during its first album backfill');
   record('album track ratings and first backfill', { status: album.status, persistedTrackRating: album.data.review.trackRatings[0].rating, songLinked: true, invalidPayloadsRejected: badRatings.length });
-  for (const [id, status] of [['upstream-rate-limit', 429], ['upstream-missing', 404]]) {
-    const upstream = await request(`/api/spotify/track/${id}`);
-    assert.equal(upstream.status, status);
-    assert.equal(upstream.data.ok, false);
+  const missingTrack = await request('/api/spotify/track/upstream-missing');
+  assert.equal(missingTrack.status, 404);
+  assert.equal(missingTrack.data.ok, false);
+  const batchIds = Array.from({ length: 51 }, (_, index) => `audit-${index}`);
+  for (const mediaType of ['albums', 'tracks']) {
+    const tooMany = await request(`/api/spotify/${mediaType}?ids=${batchIds.join(',')}`);
+    assert.equal(tooMany.status, 400);
+    assert.equal(tooMany.data.error, 'too_many_ids');
+    assert.equal(tooMany.data.maxIds, 50);
+    assert.equal((await request(`/api/spotify/${mediaType}?ids=${batchIds.slice(0, 50).join(',')}`)).status, 200);
   }
+  const spotifyClient = { authenticated: false, clientIp: '198.51.100.28' };
+  for (let count = 0; count < 30; count++) assert.equal((await request('/api/spotify/search', spotifyClient)).status, 400);
+  const spotifyThrottled = await request('/api/spotify/track/audit-track', spotifyClient);
+  assert.equal(spotifyThrottled.status, 429, 'Spotify routes share the same client budget');
+  assert.equal(spotifyThrottled.data.error, 'rate_limited');
+  assert.ok(Number(spotifyThrottled.retryAfter) > 0);
+  assert.equal((await request('/api/spotify/track/audit-track', { ...spotifyClient, clientIp: '198.51.100.29' })).status, 200);
+  assert.equal((await request('/api/health', spotifyClient)).status, 200);
+  record('Spotify proxy budget', { perClientIsolation: true, batchCap: 50, retryAfter: true });
   const tokenStatus = await request('/api/spotify/debug/token');
   assert.equal(tokenStatus.data.cache.hasToken, true);
   assert.equal('token' in tokenStatus.data.cache, false);
-  record('Spotify error propagation and token redaction', { rateLimitStatus: 429, missingStatus: 404, tokenExposed: false });
+  record('Spotify error propagation and token redaction', { missingStatus: 404, tokenExposed: false });
   await request('/api/logout', { method: 'POST' });
   record('logout', { authenticated: (await request('/api/me')).data?.authenticated });
   const login = await request('/api/auth/local/login', { method: 'POST', body: { email, password: 'example-password' } });
   record('local login', { status: login.status, authenticated: (await request('/api/me')).data?.authenticated });
   assert.equal(login.status, 200);
   await database.collection('users').insertOne({ email: 'google-only@example.invalid', loginEmails: ['google-only@example.invalid'], emailHistory: ['google-only@example.invalid'], role: 'user', reviewIds: [], firstname: 'Audit', lastname: 'Google', accounts: [{ kind: 'Google', uid: 'audit-google' }], googleProfile: { uid: 'audit-google', email: 'google-only@example.invalid', firstname: 'Audit', lastname: 'Google' }, createdAt: now, updatedAt: now });
-  const link = await request('/api/auth/local/signup', { method: 'POST', authenticated: false, body: { email: 'google-only@example.invalid', password: 'example-password' } });
+  const link = await request('/api/auth/local/signup', { method: 'POST', authenticated: false, body: { email: 'google-only@example.invalid', password: 'example-password', firstname: 'Google', lastname: 'Only' } });
   assert.equal(link.status, 409);
   assert.equal(link.data.user, undefined);
   assert.equal((await database.collection('users').findOne({ email: 'google-only@example.invalid' })).passwordHash, undefined);
@@ -294,7 +338,7 @@ try {
   await database.collection(process.env.SESSIONS_COLLECTION || 'expressSessions').updateOne({ _id: sessionId }, { $set: { 'session.googleAuth.expiresAt': 0 } });
   assert.equal((await request('/api/auth/google/exchange', { method: 'POST', body: { ...expired, code: 'audit-valid-profile' } })).status, 400);
   const changedSession = await prepareGoogleAuth('link');
-  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'second@example.invalid', password: 'example-password' } })).status, 200);
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'second@example.invalid', password: 'example-password', firstname: 'Second', lastname: 'Reviewer' } })).status, 200);
   const secondId = (await request('/api/me')).data.user.oid;
   assert.equal((await request('/api/auth/google/exchange', { method: 'POST', body: { ...changedSession, code: 'audit-valid-profile' } })).status, 400);
   assert.equal((await request('/api/me')).data.user.oid, secondId);
@@ -340,7 +384,7 @@ try {
     assert.equal(aliasLogin.status, 200);
     assert.equal(aliasLogin.data.user.oid, userId);
   }
-  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: alias, password: 'example-password' } })).status, 409);
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: alias, password: 'example-password', firstname: 'Alias', lastname: 'Reviewer' } })).status, 409);
   assert.equal((await request('/api/profile/google-details', { method: 'POST', authenticated: false, body: { email: true } })).status, 401);
   assert.equal((await request('/api/profile/google-details', { method: 'POST', body: { email: alias } })).status, 400);
   assert.equal((await request('/api/profile/emails', { method: 'DELETE', body: { email: alias } })).data.error, 'primary_email');
@@ -365,7 +409,7 @@ try {
   assert.deepEqual((await database.collection('users').findOne({ _id: new ObjectId(userId) })).loginEmails, [alias]);
   assert.equal((await request('/api/auth/local/login', { method: 'POST', body: { email, password: 'example-password' } })).status, 404);
   assert.equal((await request('/api/auth/local/login', { method: 'POST', body: { email: alias, password: 'example-password' } })).status, 200);
-  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'different-password' } })).status, 200);
+  assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'different-password', firstname: 'Signing', lastname: 'Reviewer' } })).status, 200);
   record('Google profile choices and email management', { selectionCombinations: 8, bothEmailsLogin: true, aliasUniqueness: true, googleEmailRemovalDisconnectsProvider: true, primaryRemovalPrevented: true, removedAddressesStayRemovedAfterInitialization: true, originalAddressReusableAfterRemoval: true, passwordAndReviewsPreserved: true });
   record('Google linking collision and flow binding', { collisionStatus: collision.status, conflictingUsersUnchanged: true, guestRejected: true, statePkceExpiryReplayAndSessionGuards: true, unusedIdentityLinkedToCurrentUser: true, primaryEmailPasswordAndReviewsPreserved: true, subsequentGoogleSigninUsesSameAccount: true });
   for (const [code, status] of [['audit-missing-profile', 502], ['audit-unverified-profile', 401]]) {
@@ -387,7 +431,7 @@ try {
   await database.collection('users').updateOne({ _id: pendingGoogleUser._id }, { $unset: { deletionPending: '' } });
   for (const path of ['/api/profile/export.csv', '/api/profile/export.pdf']) assert.equal((await request(path, { authenticated: false })).status, 401);
   assert.equal((await request('/api/profile', { method: 'DELETE', body: { confirmation: 'DELETE' }, authenticated: false })).status, 401);
-  const disposable = await request('/api/auth/local/signup', { method: 'POST', body: { email: 'delete-me@example.invalid', password: 'delete-fixture-password' } });
+  const disposable = await request('/api/auth/local/signup', { method: 'POST', body: { email: 'delete-me@example.invalid', password: 'delete-fixture-password', firstname: 'Delete', lastname: 'Fixture' } });
   assert.equal(disposable.status, 200);
   const deleteOid = disposable.data.user.oid, firstDeviceCookie = cookie;
   cookie = ''; // A separate browser/device session, not rotation of the first.
@@ -438,11 +482,20 @@ try {
   assert.equal((await staleSession.json()).authenticated, false);
   assert.equal((await request('/api/auth/local/login', { method: 'POST', body: { email: 'delete-me@example.invalid', password: 'delete-fixture-password' } })).status, 404);
   record('account CSV/PDF export and permanent deletion', { guestAccessDenied: true, privateDataIsolated: true, csvQuotedAndFormulaSafe: true, unicodeAndMultipagePdf: true, confirmationRequired: true, interruptedDeletionRetry: true, reviewsAndAllMediaReferencesRemoved: true, allSessionsRemoved: true, otherUsersUnchanged: true });
+  const spotifyUpstreamLimit = await request('/api/spotify/track/upstream-rate-limit');
+  assert.equal(spotifyUpstreamLimit.status, 429);
+  assert.equal(spotifyUpstreamLimit.data.error, 'spotify_rate_limited');
+  assert.equal(spotifyUpstreamLimit.retryAfter, '17');
+  const pausedSpotify = await request('/api/spotify/track/upstream-missing', { authenticated: false, clientIp: '198.51.100.29' });
+  assert.equal(pausedSpotify.status, 429, 'an independent client should also respect the upstream cooldown');
+  assert.equal(pausedSpotify.data.error, 'spotify_rate_limited');
+  assert.ok(Number(pausedSpotify.retryAfter) > 0 && Number(pausedSpotify.retryAfter) <= 17);
+  record('Spotify upstream cooldown', { retryAfterPreserved: true, sharedPause: true });
   const developmentExited = new Promise(resolve => server.once('exit', resolve));
   server.kill('SIGTERM');
   await developmentExited;
   server = spawn(process.execPath, ['--import', './tests/fixtures/providers.mjs', 'server/index.js'], {
-    env: { ...process.env, PORT: String(port), NODE_ENV: 'production', SESSION_COOKIE_SECURE: 'false' },
+    env: { ...process.env, PORT: String(port), NODE_ENV: 'production', SESSION_COOKIE_SECURE: 'true', API_ORIGIN: origin, MONGO_APP_USERNAME: '', MONGO_APP_PASSWORD: '', MONGO_APP_AUTH_SOURCE: '' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   server.stdout.on('data', () => {});

@@ -1,8 +1,8 @@
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 COPY package*.json .
-RUN npm install
-RUN apk add --no-cache curl
+RUN npm ci
+RUN apk add --no-cache curl poppler-utils
 COPY . .
 EXPOSE 5174
-CMD ["sh", "-c", "npm run db:apply-schemas && npm run server"]
+CMD ["sh", "-c", "npm run db:provision-app-user && npm run db:apply-schemas && npm run db:apply-views && npm run db:seed-default-admin && npm run server"]

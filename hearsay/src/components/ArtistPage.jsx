@@ -90,9 +90,6 @@ export default function ArtistPage() {
           }
         });
 
-        console.log('Album items:', albumItems.length);
-        console.log('Single items:', singleItems.length);
-
         // Get full details for albums in batches to avoid rate limits
         const albumIds = albumItems.slice(0, 50).map(a => a.id);
         let sortedAlbums = [];
@@ -125,15 +122,12 @@ export default function ArtistPage() {
           const batchedSinglesResp = await getSpotifyAlbums(singleIds);
           const singleDetailsResponses = Array.isArray(batchedSinglesResp?.albums) ? batchedSinglesResp.albums : [];
 
-          console.log('Single details responses:', singleDetailsResponses.length);
-
           sortedSingles = singleDetailsResponses
             .filter(r => r) // Filter out null responses
             .flatMap(r => {
               // For singles with only 1 track, use the track ID
               // For EPs/singles with multiple tracks, use all track IDs
               const tracks = r.tracks?.items || [];
-              console.log(`Album "${r.name}" has ${tracks.length} tracks`);
               return tracks.map(track => ({
                 id: track.id, // Use individual track ID
                 title: track.name,
@@ -150,7 +144,6 @@ export default function ArtistPage() {
             })
             .sort((a, b) => b.popularity - a.popularity);
 
-          console.log('Sorted singles:', sortedSingles.length);
         }
 
         setAlbums(sortedAlbums);

@@ -19,7 +19,7 @@ Authenticated routes require a server session with `user.oid`. Review mutations 
 | GET `/api/me` | Public | `{authenticated:true,user}` or `{authenticated:false}` |
 | GET `/api/session` | Public | Session ID, creation time and incremented visit count |
 | POST `/api/logout` | Session | Destroy session and clear cookie |
-| POST `/api/auth/local/signup` | Public | `{email,password}`; create a user; existing email returns 409 |
+| POST `/api/auth/local/signup` | Public | `{email,password,firstname,lastname}`; create a named user; existing email returns 409 |
 | POST `/api/auth/local/login` | Public | Normalize email, bcrypt password check, establish session |
 | POST `/api/auth/local/set-password` | Authenticated | `{password}`; set/change password and Local account kind |
 | POST `/api/auth/google/start` | Public for signin; authenticated for link | `{intent: signin\|link,code_challenge}`; saves a ten-minute session-bound flow and returns state |
@@ -96,15 +96,17 @@ Own-review/upsert responses are database-shaped (`_id`, `item`, `user`, etc.). P
 | --- | --- |
 | `/api/spotify/search` | q required; type=track, limit=10, optional market |
 | `/api/spotify/track/:id` | Track details |
-| `/api/spotify/tracks` | Comma-separated ids, optional market; chunks of 50 |
+| `/api/spotify/tracks` | Up to 50 comma-separated IDs, optional market |
 | `/api/spotify/album/:id` | Album details and returned tracks page |
-| `/api/spotify/albums` | Comma-separated ids, optional market; chunks of 20 |
+| `/api/spotify/albums` | Up to 50 comma-separated IDs, optional market. Sends upstream batches of up to 20. |
 | `/api/spotify/artist/:id` | Artist details |
 | `/api/spotify/artist/:id/albums` | include_groups=album,single, limit=50, optional market |
 | `/api/spotify/new-releases` | country=US, limit=50 |
 | `/api/spotify/recommendations` | Query passthrough; default seed_genres=pop,rock |
 
-Upstream availability depends on the configured Spotify application. Batch routes chunk IDs, while album details return the embedded tracks page. Search/new-release helpers accept the listed parameters; they do not forward offset. Clients should inspect both HTTP status and the returned data when handling API failures.
+The Spotify proxy allows 30 requests per 30 seconds per client, shared across these routes. It returns `429` with `Retry-After` and `rate_limited` when a client reaches that limit. If Spotify returns `429`, the backend pauses all calls through the Spotify helper (including metadata lookups outside the proxy) for Spotify's `Retry-After` interval, or 30 seconds if Spotify omits it. During that pause, the proxy returns `429` with `spotify_rate_limited` and the remaining wait. Both limits reset on backend restart. A single token refresh is shared across concurrent requests.
+
+Upstream availability depends on the configured Spotify application. Album details return the embedded tracks page. Search/new-release helpers accept the listed parameters and do not forward offset.
 
 ## Diagnostics
 
@@ -160,12 +162,15 @@ Run from `hearsay`. The API/db helper load `.env.development` or `.env.productio
 | --- | --- |
 | NODE_ENV, PORT | Development unless production; port 5174 |
 | MONGO_URI | Explicit URI takes precedence |
-| MONGO_USERNAME/MONGO_USER, MONGO_PASSWORD/MONGO_PASS | DB credentials |
+| MONGO_USERNAME/MONGO_USER, MONGO_PASSWORD/MONGO_PASS | Administrative DB credentials used for setup and migrations |
+| MONGO_APP_USERNAME/MONGO_APP_PASSWORD | HearSay runtime account with `readWrite` only on MONGO_DB_NAME; falls back to the admin credentials for existing installs |
+| MONGO_APP_AUTH_SOURCE | Runtime account authentication database; defaults to MONGO_DB_NAME |
 | MONGO_HOST, MONGO_PORT, MONGO_PROTOCOL, MONGO_AUTH_SOURCE | localhost, 27017, mongodb, admin |
 | MONGO_DB_NAME | hearsay; set explicitly for consistent domain/session storage |
 | SESSION_SECRET, SESSION_NAME | Stable secret; otherwise regenerated each restart; cookie hsid |
 | SESSION_TTL_SECONDS, SESSION_ROTATE_MS | 3600 seconds, 3600000 milliseconds |
 | SESSION_COOKIE_SECURE | Exact string true enables Secure; default true in production |
+| TRUST_PROXY | Trusted Express proxy address or subnet. Defaults to loopback for native development. Compose sets the frontend container address. |
 | SESSIONS_COLLECTION | expressSessions |
 | API_ORIGIN | Comma-separated production origin allowlist; development allows all origins |
 | GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET | Server Google credentials |
@@ -175,3 +180,13 @@ Run from `hearsay`. The API/db helper load `.env.development` or `.env.productio
 | SCHEMA_DIR | Optional initializer directory override |
 
 Legacy VITE-prefixed server fallbacks exist but must not be used for secrets. Cookies are httpOnly, SameSite=Lax, rolling and TTL-backed. Authenticated requests periodically regenerate session IDs.
+
+Public review, discussion, and recent-review responses expose a display name only. Email addresses are never used as public author fallbacks. Local signup requires `firstname` and `lastname`; profile updates require both names to remain nonblank and reject values longer than 100 characters. Google sign-in can provide names, and startup may copy names already saved in the Google profile; an account with no usable name is shown as `Community member`.
+
+In production, backend startup requires `SESSION_COOKIE_SECURE=true` and at least one `API_ORIGIN`. It rejects state-changing `POST`, `PUT`, `PATCH`, and `DELETE` requests whose browser `Origin` or `Referer` is outside the configured origin allowlist. Browserless/API clients without either header remain allowed. `OPTIONS`, GET requests and native development behavior are unchanged.
+
+Local login allows 20 failed requests per 15 minutes per client. Local signup allows 10 requests per hour per client. IPv6 addresses are counted by subnet. Blocked requests return `429` with `Retry-After` and the `rate_limited` error. The counters are in memory for the single backend instance and reset when it restarts. Production client addresses come from the trusted proxy chain described in the [deployment setup](../README.md#production-setup-online-access).
+
+The current counters are process-local and do not coordinate multiple backend replicas. Scaling the API to more than one instance requires a shared store or edge-enforced rate limiting.
+
+Compose provisions `MONGO_APP_USERNAME` with `readWrite` access to `MONGO_DB_NAME` using the configured administrative `MONGO_USERNAME`/`MONGO_PASSWORD`. Normal backend requests use the app account; schema, view, and default-admin startup steps use the administrative account. If `MONGO_APP_USERNAME` is omitted, existing installations continue to use the administrative account as a fallback. The database port is loopback-bound in the standard stack.

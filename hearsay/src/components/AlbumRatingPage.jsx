@@ -196,12 +196,6 @@ export default function AlbumRatingPage() {
   const handleSubmitReview = async () => {
     const sanitizedReview = sanitizeInput(review);
 
-    console.log('Album review:', {
-      albumId: album.id,
-      albumTitle: album.title,
-      review: sanitizedReview,
-      wordCount: wordCount
-    });
 
     if (!sanitizedReview.trim()) {
       alert('Please write a review before submitting!');

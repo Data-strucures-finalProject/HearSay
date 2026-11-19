@@ -10,30 +10,15 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
-
-    console.log('🎨 Current theme:', theme);
-    console.log('📋 HTML element before:', root.className);
-
-    // Remove dark class
     root.classList.remove('dark');
-
-    // Add dark class only if theme is dark
     if (theme === 'dark') {
       root.classList.add('dark');
     }
-
-    console.log('📋 HTML element after:', root.className);
-
-    // Save to localStorage
     localStorage.setItem('theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => {
-      const newTheme = prev === 'light' ? 'dark' : 'light';
-      console.log('🔄 Toggle:', prev, '→', newTheme);
-      return newTheme;
-    });
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
   return (

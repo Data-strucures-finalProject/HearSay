@@ -3,10 +3,10 @@
 Run these optional suites from PowerShell or Command Prompt with the app containers built and running. Host Node.js is not required.
 
 ```powershell
-# Install temporary test tools and run everything.
+# Install temporary browser test tools and run everything.
 .\scripts\tests\run.cmd --setup
 
-# Subsequent runs, until the backend container is recreated.
+# Subsequent runs use built-in pdftotext and browser tools installed by --setup.
 .\scripts\tests\run.cmd
 .\scripts\tests\run.cmd runtime
 .\scripts\tests\run.cmd browser
@@ -16,7 +16,7 @@ Run these optional suites from PowerShell or Command Prompt with the app contain
 .\scripts\tests\run.cmd discussions
 ```
 
-`--setup` installs temporary PDF tools, Chromium and Playwright in the backend container. Recreating the container removes them. The runner copies tests to `/app/tests` and stops at the first failure. Rebuild changed application images before testing; the runner does not restart services.
+The backend image includes `pdftotext` for account-PDF export tests. Browser suites install temporary Chromium and Playwright dependencies with `run.cmd --setup`; recreating the backend container removes those temporary browser dependencies. The runner copies tests to `/app/tests` and stops at the first failure. Rebuild changed application images before testing; the runner does not restart services.
 
 | Location | Purpose |
 | --- | --- |
@@ -27,7 +27,7 @@ Run these optional suites from PowerShell or Command Prompt with the app contain
 | `insights.mjs` | All ten real MongoDB views/API contracts plus current-source browser tests for Discover, Community and admin integrity |
 | `fixtures/providers.mjs` | Google/Spotify responses preloaded only into the isolated runtime test server |
 | `hearsay/server/scripts/validate-database.mjs` (repository root) | Read-only validation of the configured database; run `docker compose exec -T backend npm run db:validate` |
-| `browser/smoke.mjs` | Public-route smoke checks and intercepted review/auth/error contracts |
+| `browser/smoke.mjs` | Public-route smoke checks and intercepted review/auth/error contracts, including Spotify homepage fallback and Random Song request counts |
 | `browser/rating-layout.mjs` | Run by smoke: rating/track-list geometry, long titles, touch targets, half-stars, keyboard input and final-track access in both themes at six widths |
 | `browser/admin.mjs` | Guest/user/admin visibility, route guards and mobile navigation |
 | `browser/google-link.mjs` | Google sign-in/link callback success and failure paths |

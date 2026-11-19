@@ -108,6 +108,7 @@ export default function RandomPage() {
               break;
             }
           } catch (searchError) {
+            if (searchError.status === 429) throw searchError;
             console.warn(`Attempt ${attempts} failed:`, searchError);
           }
         }
@@ -132,7 +133,7 @@ export default function RandomPage() {
       setItemType(type);
     } catch (error) {
       console.error('Error fetching random music:', error);
-      setError('Failed to fetch random music. Please try again.');
+      setError(error.status === 429 ? error.message : 'Failed to fetch random music. Please try again.');
     } finally {
       setLoading(false);
     }

@@ -7,6 +7,8 @@
     "dev": "vite",
     "server": "node server/index.js",
     "db:apply-schemas": "node server/scripts/apply-schemas.mjs",
+    "db:provision-app-user": "node server/scripts/provision-app-user.mjs",
+    "db:seed-default-admin": "node server/scripts/seed-default-admin.mjs",
     "db:migrate-track-ratings": "node server/scripts/migrate-track-ratings.mjs",
     "db:apply-views": "node server/scripts/apply-views.mjs",
     "db:validate": "node server/scripts/validate-database.mjs",
@@ -22,15 +24,14 @@
     "start:backend": "cross-env NODE_ENV=production node server/index.js"
   },
   "dependencies": {
-    "@react-oauth/google": "^0.12.2",
     "@tailwindcss/vite": "^4.1.16",
-    "axios": "^1.13.2",
     "bcryptjs": "^2.4.3",
     "connect-mongo": "^5.1.0",
     "cors": "^2.8.5",
     "dejavu-fonts-ttf": "^2.37.3",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.7.5",
     "express-session": "^1.17.3",
     "lucide-react": "^0.552.0",
     "mongodb": "^6.9.0",
@@ -38,7 +39,6 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.5",
-    "spotify-web-api-node": "^5.0.2",
     "tailwindcss": "^4.1.16"
   },
   "devDependencies": {

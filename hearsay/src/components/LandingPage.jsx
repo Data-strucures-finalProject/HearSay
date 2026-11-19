@@ -3,11 +3,32 @@ import { useNavigate } from 'react-router-dom';
 import { searchSpotify } from '../config/spotify';
 
 const MIN_LOADING_TIME = 1000;
+const HOME_CARD_COUNT = 5;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Multiple search terms for more variety
 const ALBUM_SEARCH_TERMS = ['album', 'music', 'new', 'best', 'top'];
 const TRACK_SEARCH_TERMS = ['track', 'song', 'hit', 'popular', 'new'];
+
+async function loadPopularItems(type, terms, market) {
+  const start = Math.floor(Math.random() * terms.length);
+  const items = new Map();
+  for (const term of [terms[start], terms[(start + 1) % terms.length]]) {
+    try {
+      const result = await searchSpotify(term, type, 50, market);
+      const matches = type === 'album' ? result?.albums?.items : result?.tracks?.items;
+      for (const item of matches || []) {
+        if (item?.id && (type !== 'album' || item.total_tracks > 1) && !items.has(item.id)) {
+          items.set(item.id, item);
+        }
+      }
+    } catch (error) {
+      return { items: [...items.values()], error };
+    }
+    if (items.size >= HOME_CARD_COUNT) break;
+  }
+  return { items: [...items.values()] };
+}
 
 const LOCALES = [
   { label: 'United States', code: 'US' },
@@ -57,78 +78,40 @@ export default function LandingPage() {
 
       const loadingStartTime = Date.now();
 
-      // Randomly select search terms for more variety
-      const randomAlbumTerm = ALBUM_SEARCH_TERMS[Math.floor(Math.random() * ALBUM_SEARCH_TERMS.length)];
-      const randomTrackTerm = TRACK_SEARCH_TERMS[Math.floor(Math.random() * TRACK_SEARCH_TERMS.length)];
-
-      // Fetch multiple queries to get a larger, more diverse pool
-      const [albumsResponse1, albumsResponse2, tracksResponse1, tracksResponse2] = await Promise.all([
-        searchSpotify(randomAlbumTerm, 'album', 50, selectedLocale),
-        searchSpotify(ALBUM_SEARCH_TERMS[(ALBUM_SEARCH_TERMS.indexOf(randomAlbumTerm) + 1) % ALBUM_SEARCH_TERMS.length], 'album', 50, selectedLocale),
-        searchSpotify(randomTrackTerm, 'track', 50, selectedLocale),
-        searchSpotify(TRACK_SEARCH_TERMS[(TRACK_SEARCH_TERMS.indexOf(randomTrackTerm) + 1) % TRACK_SEARCH_TERMS.length], 'track', 50, selectedLocale)
+      const [albumSearch, songSearch] = await Promise.all([
+        loadPopularItems('album', ALBUM_SEARCH_TERMS, selectedLocale),
+        loadPopularItems('track', TRACK_SEARCH_TERMS, selectedLocale),
       ]);
-
-      // Combine albums from both searches
-      const allAlbums = [
-        ...(albumsResponse1?.albums?.items || []),
-        ...(albumsResponse2?.albums?.items || [])
-      ];
-
-      // Remove album duplicates and filter
-      const uniqueAlbumsMap = new Map();
-      allAlbums.forEach(album => {
-        if (album && album.id && album.total_tracks > 1 && !uniqueAlbumsMap.has(album.id)) {
-          uniqueAlbumsMap.set(album.id, album);
-        }
-      });
-      const uniqueAlbums = Array.from(uniqueAlbumsMap.values());
-
       // More aggressive randomization for albums
-      const randomAlbums = uniqueAlbums
+      const randomAlbums = albumSearch.items
         .sort(() => Math.random() - 0.5) // First shuffle
         .slice(0, 50) // Take 50 random
         .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)) // Sort by popularity
         .slice(0, 30) // Take top 30
         .sort(() => Math.random() - 0.5) // Shuffle again
-        .slice(0, 5) // Take final 5
+        .slice(0, HOME_CARD_COUNT)
         .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)) // Final sort for display
         .map(album => ({
           id: album.id,
           title: album.name,
-          artist: album.artists[0].name,
+          artist: album.artists?.[0]?.name || 'Unknown artist',
           coverArt: album.images?.[0]?.url,
           popularity: album.popularity
         }));
 
-      // Combine tracks from both searches
-      const allTracks = [
-        ...(tracksResponse1?.tracks?.items || []),
-        ...(tracksResponse2?.tracks?.items || [])
-      ];
-
-      // Remove track duplicates
-      const uniqueTracksMap = new Map();
-      allTracks.forEach(track => {
-        if (track && track.id && !uniqueTracksMap.has(track.id)) {
-          uniqueTracksMap.set(track.id, track);
-        }
-      });
-      const uniqueTracks = Array.from(uniqueTracksMap.values());
-
       // More aggressive randomization for tracks
-      const randomSongs = uniqueTracks
+      const randomSongs = songSearch.items
         .sort(() => Math.random() - 0.5) // First shuffle
         .slice(0, 50) // Take 50 random
         .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)) // Sort by popularity
         .slice(0, 30) // Take top 30
         .sort(() => Math.random() - 0.5) // Shuffle again
-        .slice(0, 5) // Take final 5
+        .slice(0, HOME_CARD_COUNT)
         .sort((a, b) => (b.popularity || 0) - (a.popularity || 0)) // Final sort for display
         .map(track => ({
           id: track.id,
           title: track.name,
-          artist: track.artists[0].name,
+          artist: track.artists?.[0]?.name || 'Unknown artist',
           coverArt: track.album?.images?.[0]?.url,
           popularity: track.popularity
         }));
@@ -141,11 +124,13 @@ export default function LandingPage() {
 
       setAlbums(randomAlbums);
       setSongs(randomSongs);
+      const searchError = [albumSearch.error, songSearch.error].find(failure => failure?.status === 429) || albumSearch.error || songSearch.error;
+      if (searchError) setError(searchError.status === 429 ? searchError.message : 'Some music results could not load. Please try again.');
       setAlbumsLoading(false);
       setSongsLoading(false);
     } catch (error) {
       console.error('Error fetching music:', error);
-      setError(error.message);
+      setError('Unable to load music. Please try again.');
       setAlbumsLoading(false);
       setSongsLoading(false);
     }
@@ -162,7 +147,7 @@ export default function LandingPage() {
   return (
     <main className="container mx-auto px-4 py-8">
       {error && (
-        <div className="text-red-500 mb-4 p-4 border-2 border-red-500">
+        <div role="alert" className="text-red-700 dark:text-red-300 mb-4 p-4 border-2 border-red-500">
           {error}
         </div>
       )}

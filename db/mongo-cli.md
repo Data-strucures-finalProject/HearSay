@@ -116,7 +116,7 @@ mongorestore --host "$mongo_server" --port "$mongo_port" --username "$mongo_user
 mongoexport --host "$mongo_server" --port "$mongo_port" --db "$mongo_db" --collection reviews --username "$mongo_user" --authenticationDatabase "$mongo_auth_db" --jsonArray --out="$backup_dir/reviews.json"
 ```
 
-`db/backup.sh` and `db/restore.sh` are legacy Bash helpers: they hardcode database `HearSay`, admin/localhost/27017; restore also uses `--drop`. Review/edit their configuration before using them. The explicit commands above use the current default database instead. User deduplication is also a mutating maintenance operation; back up and assess linked reviews before running it.
+`db/backup.sh` and `db/restore.sh` read `MONGO_DB_NAME`, `MONGO_USERNAME`/`MONGO_USER`, `MONGO_PASSWORD`/`MONGO_PASS`, `MONGO_HOST`, `MONGO_PORT`, and `MONGO_AUTH_SOURCE` from the process or the repository-root `.env`. They default to `hearsay`, `admin`, `admin`, `localhost`, and `27017`. The restore helper imports matching namespaces without `--drop`; it does not remove extra existing records. Back up before restore and review the target database first. User deduplication is also a mutating maintenance operation; back up and assess linked reviews before running it.
 
 ## Compass and connections
 

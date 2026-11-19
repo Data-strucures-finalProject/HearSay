@@ -28,6 +28,9 @@ const MONGO_PORT = ENV.MONGO_PORT || ENV.VITE_MONGO_PORT || '27017';
 const MONGO_PROTOCOL = ENV.MONGO_PROTOCOL || ENV.VITE_MONGO_PROTOCOL || 'mongodb';
 const MONGO_AUTH_SOURCE = ENV.MONGO_AUTH_SOURCE || ENV.VITE_MONGO_AUTH_SOURCE || 'admin';
 const MONGO_DB_NAME = ENV.MONGO_DB_NAME || ENV.VITE_MONGO_DB_NAME || 'hearsay';
+const MONGO_APP_USER = ENV.MONGO_APP_USERNAME || ENV.MONGO_APP_USER;
+const MONGO_APP_PASS = ENV.MONGO_APP_PASSWORD || ENV.MONGO_APP_PASS;
+const MONGO_APP_AUTH_SOURCE = ENV.MONGO_APP_AUTH_SOURCE || MONGO_DB_NAME;
 
 const EXPLICIT_URI = ENV.MONGO_URI || ENV.VITE_MONGO_URI;
 const MONGO_URI = EXPLICIT_URI || (() => {
@@ -40,19 +43,28 @@ const MONGO_URI = EXPLICIT_URI || (() => {
   return uri;
 })();
 
-console.log('[DB] Connecting to:', MONGO_URI.replace(/:[^:@]+@/, ':****@')); // hide password in log
+const MONGO_APP_URI = MONGO_APP_USER ? (() => {
+  const uri = `${MONGO_PROTOCOL}://${encodeURIComponent(MONGO_APP_USER)}:${encodeURIComponent(MONGO_APP_PASS || '')}@${MONGO_HOST}`;
+  if (MONGO_PROTOCOL === 'mongodb' && MONGO_PORT) return `${uri}:${MONGO_PORT}/?authSource=${encodeURIComponent(MONGO_APP_AUTH_SOURCE)}`;
+  return `${uri}/?authSource=${encodeURIComponent(MONGO_APP_AUTH_SOURCE)}`;
+})() : MONGO_URI;
 
 let client;
 let db;
 
 export async function connectMongo(uri = MONGO_URI, dbName = MONGO_DB_NAME) {
   if (db) return db;
+  console.log('[DB] Connecting to:', uri.replace(/:[^:@]+@/, ':****@')); // hide password in log
   const opts = { maxPoolSize: 10 };
   // Credentials should already be in the URI; driver will use them automatically
   client = new MongoClient(uri, opts);
   await client.connect();
   db = client.db(dbName);
   return db;
+}
+
+export async function connectMongoApp(dbName = MONGO_DB_NAME) {
+  return connectMongo(MONGO_APP_URI, dbName);
 }
 
 export function getDb() {

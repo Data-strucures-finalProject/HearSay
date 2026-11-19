@@ -6,7 +6,7 @@ React 19, React Router 7, Vite 7 and Tailwind 4 provide the SPA. `main.jsx` moun
 
 | Route | Component | Current behavior |
 | --- | --- | --- |
-| `/` | LandingPage | Spotify new releases/search, sampled/popularity-sorted cards, locale selector and refresh |
+| `/` | LandingPage | Spotify search, sampled/popularity-sorted cards, locale selector and refresh |
 | `/auth` | AuthPage | Local login/register and Google PKCE redirect |
 | `/auth/callback` | AuthCallback | Validate tab-scoped OAuth state, exchange code once, then return to home or Profile according to intent |
 | `/search?q=...` | SearchPage | Spotify artist/album/track search; ten initial cards/category and Show All within fetched results |
@@ -37,6 +37,8 @@ Song and album pages use `MediaDetailLayout.css`: a stacked layout below 1024px 
 Album track submission requires at least one rated track, not all tracks. It sequentially saves each song review, averages rated tracks, then saves a rounded album rating. Writes can partially succeed. Existing track values load through individual song reviews. My Reviews lists those records as well as albums. Album submission includes a trackRatings array of `{ trackId, rating }` entries. The API requires this array format; see the backend contract.
 
 AlbumRatingPage uses Spotify for its album track list. ArtistPage uses cached artist details with live album/single requests. Public ReviewPage links the reviewed title to its media page. Song reviews also display linked album/artist names; album reviews display linked artist names. Comment permalinks retain this media context. The backend resolves cached internal references to Spotify page IDs, with provider metadata used for uncached items; unresolved relationships display their available names without a guessed destination. Review editing submits through the upsert endpoint.
+
+The homepage starts with one Spotify search per category and tries a second search only when fewer than five eligible, unique items are available. It keeps partial results if a fallback fails. Random Song continues past empty results and stops on a `429` response.
 
 ## Authentication state
 

@@ -9,6 +9,11 @@ async function apiGet(path, params = {}) {
   const res = await fetch(url.toString(), { credentials: 'include' });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.ok) {
+    if (res.status === 429) {
+      const error = new Error('Too many music requests. Please wait and try again.');
+      error.status = 429;
+      throw error;
+    }
     const message = data?.error ? JSON.stringify(data.error) : `HTTP ${res.status}`;
     throw new Error(`Spotify request failed: ${message}`);
   }

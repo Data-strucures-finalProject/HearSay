@@ -20,7 +20,7 @@ if not defined valid (
 pushd "%~dp0..\.."
 if errorlevel 1 exit /b 1
 if defined setup (
-  docker compose exec -T backend sh -c "apk add --no-cache poppler-utils chromium >/dev/null && npm install --prefix /tmp/hearsay-browser --no-save --ignore-scripts playwright >/dev/null"
+  docker compose exec -T backend sh -c "apk add --no-cache chromium >/dev/null && npm install --prefix /tmp/hearsay-browser --no-save --ignore-scripts playwright >/dev/null"
   if errorlevel 1 goto failed
 )
 docker compose cp scripts/tests/. backend:/app/tests

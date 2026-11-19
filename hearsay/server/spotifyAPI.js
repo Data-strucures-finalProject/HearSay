@@ -10,15 +10,26 @@ if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
 
 // Simple in-memory token cache
 let _cached = { token: null, expiresAt: 0 };
+let tokenRequest;
+let retryAt = 0;
+
+function spotifyCooldown() {
+  const retryAfter = Math.ceil((retryAt - Date.now()) / 1000);
+  return retryAfter > 0 ? { error: 'spotify_rate_limited', status: 429, retryAfter } : null;
+}
+
+function pauseSpotify(response) {
+  const seconds = Number(response.headers.get('Retry-After'));
+  const delayMs = seconds > 0 && Number.isSafeInteger(seconds * 1000) ? seconds * 1000 : 30000;
+  retryAt = Math.max(retryAt, Date.now() + delayMs);
+  return spotifyCooldown();
+}
+
 export function _debugTokenCache() {
   return { hasToken: Boolean(_cached.token), expiresAt: _cached.expiresAt };
 }
 
-async function fetchAppToken() {
-  const now = Date.now();
-  if (_cached.token && _cached.expiresAt > now + 5000) {
-    return _cached.token;
-  }
+async function requestAppToken() {
   if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
     throw new Error('spotify_credentials_missing');
   }
@@ -32,22 +43,39 @@ async function fetchAppToken() {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
+  if (resp.status === 429) {
+    pauseSpotify(resp);
+    return null;
+  }
   if (!resp.ok) {
     const txt = await resp.text();
     throw new Error('spotify_token_failed ' + resp.status + ' ' + txt.slice(0, 300));
   }
   const data = await resp.json();
   _cached.token = data.access_token;
-  _cached.expiresAt = now + (data.expires_in * 1000);
+  _cached.expiresAt = Date.now() + (data.expires_in * 1000);
   return _cached.token;
+}
+
+async function fetchAppToken() {
+  if (_cached.token && _cached.expiresAt > Date.now() + 5000) return _cached.token;
+  // Share the token refresh when several requests arrive at once.
+  tokenRequest ??= requestAppToken().finally(() => { tokenRequest = undefined; });
+  return tokenRequest;
 }
 
 async function spotifyGet(url) {
   try {
+    const cooldown = spotifyCooldown();
+    if (cooldown) return cooldown;
     const token = await fetchAppToken();
+    const pendingCooldown = spotifyCooldown();
+    if (pendingCooldown) return pendingCooldown;
+    if (!token) return { error: 'spotify_token_unavailable', status: 503 };
     const resp = await fetch(url, {
       headers: { Authorization: 'Bearer ' + token },
     });
+    if (resp.status === 429) return pauseSpotify(resp);
     const txt = await resp.text();
     let json;
     try { json = JSON.parse(txt); } catch { json = txt; }

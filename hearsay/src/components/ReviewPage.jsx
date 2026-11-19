@@ -178,6 +178,8 @@ export default function ReviewPage() {
 
               {/* Date */}
               <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 order-3">
+                <span className="font-medium text-black dark:text-white">{review.userName || 'Community member'}</span>
+                <span aria-hidden="true"> · </span>
                 {new Date(review.createdAt || review.updatedAt || Date.now()).toLocaleString()}
               </div>
 

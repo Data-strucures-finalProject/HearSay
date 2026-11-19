@@ -20,9 +20,11 @@ flowchart TD
     Init --> Mongo
 ```
 
-Native development serves Vite on 5173 and Express on 5174. Docker publishes
-frontend Nginx on 8080, Express on 5174 and MongoDB on 27017. The optional Nginx
-Proxy Manager handles public HTTP/HTTPS only when configured separately.
+Native development serves Vite on 5173 and Express on 5174. The main Compose
+stack binds the frontend (8080), Express (5174), MongoDB (27017), and Nginx Proxy
+Manager's admin UI (8181) to host loopback. The optional Cloudflare Tunnel
+routes public traffic to Nginx Proxy Manager over the Docker network. See
+[production setup](../README.md#production-setup-online-access).
 
 ```mermaid
 flowchart LR

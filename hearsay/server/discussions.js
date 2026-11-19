@@ -1,4 +1,5 @@
 import { ObjectId, Int32 } from 'mongodb';
+import { publicDisplayName } from './userEmails.js';
 
 const mediaTypes = ['song', 'album', 'artist'];
 let pending = Promise.resolve();
@@ -86,7 +87,7 @@ export function mountDiscussionRoutes(app, database) {
   const hydrate = async (entries, viewer) => {
     const ids = entries.map(e => e.user?.oid).filter(id => oid(id));
     const users = await database.collection('users').find({ _id: { $in: ids.map(oid) } }, { projection: { firstname: 1, lastname: 1 } }).toArray();
-    const names = new Map(users.map(u => [String(u._id), [u.firstname, u.lastname].filter(Boolean).join(' ') || 'Community member']));
+    const names = new Map(users.map(u => [String(u._id), publicDisplayName(u)]));
     return entries.map(e => ({ id: String(e._id), parentId: e.item.type === 'review' ? e.item.oid : null, rootId: e.threadRoot || String(e._id), type: e.item.type, text: e.deleted ? '' : e.text, deleted: !!e.deleted, rating: e.item.type === 'review' ? null : (e.rating || 0) / 2, author: e.deleted ? '[deleted]' : names.get(e.user?.oid) || 'Community member', createdAt: e.createdAt, updatedAt: e.updatedAt, likes: e.likes || 0, dislikes: e.dislikes || 0, viewerVote: (e.votes || []).find(v => v.userOid === viewer)?.value || 0, canEdit: !!viewer && !e.deleted && e.user?.oid === viewer, replyCount: e.comments?.length || 0 }));
   };
   const paging = query => {

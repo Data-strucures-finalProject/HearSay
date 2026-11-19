@@ -11,14 +11,16 @@ console.log('[CONFIG] Loaded env file:', envFile);
 
 import bcrypt from 'bcryptjs';
 import express from 'express';
+import { rateLimit } from 'express-rate-limit';
 import cors from 'cors';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import { ObjectId, Int32 } from 'mongodb';
 import crypto from 'node:crypto';
 import * as db from './dbAPI.js';
+import { rejectsCrossSiteMutation, validateProductionOrigins } from './security.js';
 import * as spotify from './spotifyAPI.js';
-import { emailOwnerFilter, initializeUserEmails, mountEmailRoutes, publicProfile, userProjection } from './userEmails.js';
+import { emailOwnerFilter, initializeUserEmails, mountEmailRoutes, publicDisplayName, publicProfile, userProjection } from './userEmails.js';
 import { mountAccountData } from './accountData.js';
 import { initializeDefaultAdmin, mountAdminRoutes } from './admin.js';
 import { installViews, mountInsightRoutes } from './insights.js';
@@ -64,22 +66,12 @@ const SESSION_ROTATE_MS_NUM = parseInt(SESSION_ROTATE_MS, 10) || 3600000;
 
 const app = express();
 const PORT = process.env.PORT || 5174;
-// Bcrypt cost factor (default 12) - was previously commented out causing ReferenceError
+// Bcrypt cost factor used for new or changed local passwords.
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10) || 12;
 
-// Frontend origin for CORS (cookies), session cookie name/secret and timings
-//const ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
-// const SESSION_NAME = process.env.SESSION_NAME || 'hsid';
-// const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-insecure-secret';
-// const SESSION_TTL_SECONDS = parseInt(process.env.SESSION_TTL_SECONDS || '3600', 10); // 1 hour
-// const SESSION_ROTATE_MS = parseInt(process.env.SESSION_ROTATE_MS || String(60 * 60 * 1000), 10);
-// const MONGO_DB = process.env.MONGO_DB_NAME || process.env.VITE_MONGO_DB_NAME || 'HearSay';
-// const SESSIONS_COLLECTION = process.env.SESSIONS_COLLECTION || 'expressSessions';
-// const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
 
-
-// Trust proxy when behind one (must be set before CORS and session middleware)
-app.set('trust proxy', 1);
+// Trust the frontend proxy in Compose and the loopback Vite proxy in native development.
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 
 // CORS allowed origins derived from env `API_ORIGIN` (comma separated).
 // In development, if none supplied, fall back to Vite dev server origin so local frontend works.
@@ -93,6 +85,10 @@ if (origins.length === 0 && process.env.NODE_ENV !== 'production') {
   const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
   for (const o of devOrigins) origins.push(o);
   console.log('[CORS] Using dev fallback origins:', origins);
+}
+
+if (process.env.NODE_ENV === 'production') {
+  validateProductionOrigins(origins, SESSION_COOKIE_SECURE);
 }
 
 app.use(cors({
@@ -109,18 +105,10 @@ app.use(cors({
     if (!origin) return cb(null, true); // server-to-server or same-origin
     if (origins.includes(origin)) return cb(null, true);
     console.warn('[CORS][PROD] Blocked origin:', origin, 'Allowed:', origins);
-    return cb(new Error('CORS blocked: ' + origin));
+    return cb(null, false);
   },
   credentials: true,
 }));
-
-// Diagnostics for recent reviews requests
-app.use((req, _res, next) => {
-  if (req.path.startsWith('/api/reviews/recent')) {
-    console.log('[DEBUG][recent] method=', req.method, 'origin=', req.headers.origin, 'url=', req.originalUrl);
-  }
-  next();
-});
 
 app.use((req, res, next) => {
   if (req.method === 'OPTIONS') {
@@ -138,28 +126,41 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Production CSRF guard: state-changing browser requests must originate from
+// one of the configured HearSay origins. Requests without browser Origin/
+// Referer headers remain available to non-browser/API clients.
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'production' || !['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+  if (rejectsCrossSiteMutation(req, origins)) {
+    return res.status(403).json({ ok: false, error: 'csrf_origin_not_allowed' });
+  }
+  return next();
+});
+
 // Ensure DB is connected before wiring sessions so the store uses auth'd client
-await db.connectMongo().catch((err) => {
+await db.connectMongoApp().catch((err) => {
   console.error('[DB] Initial connection failed for sessions:', err);
   process.exit(1);
 });
 
-// Email alias uniqueness must be established before accepting authentication.
-await initializeUserEmails(db.getDb());
-await initializeDefaultAdmin(db.getDb());
-await installViews(db.getDb());
-// Other legacy index failures are reported without stopping startup.
-try {
-  await db.ensureUserIndexes();
-  await db.ensureReviewIndexes();
-} catch (e) {
-  console.warn('[DB] Could not ensure user indexes (likely due to duplicates).', e?.message || e);
-  console.warn('[DB] To fix duplicates, run: npm run db:dedupe-users');
+if (!process.env.MONGO_APP_USERNAME) {
+  // Existing installs and native development use the configured database
+  // account for startup maintenance.
+  await initializeUserEmails(db.getDb());
+  await initializeDefaultAdmin(db.getDb());
+  await installViews(db.getDb());
+  try {
+    await db.ensureUserIndexes();
+    await db.ensureReviewIndexes();
+  } catch (e) {
+    console.warn('[DB] Could not ensure user indexes (likely due to duplicates).', e?.message || e);
+    console.warn('[DB] To fix duplicates, run: npm run db:dedupe-users');
+  }
+  await ensureDiscussionIndexes(db.getDb());
+  await ensureMediaIndexes(db.getDb());
 }
-
-// Required discussion indexes must be ready before accepting requests.
-await ensureDiscussionIndexes(db.getDb());
-await ensureMediaIndexes(db.getDb());
 
 // Sessions backed by MongoDB
 app.use(
@@ -252,13 +253,29 @@ function validatePassword(pw) {
   return trimmed.length >= 6;
 }
 
+const clientRateLimitOptions = {
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { ok: false, error: 'rate_limited' },
+};
+const signupRateLimit = rateLimit({ ...clientRateLimitOptions, windowMs: 60 * 60 * 1000, limit: 10 });
+const loginRateLimit = rateLimit({
+  ...clientRateLimitOptions,
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  skipSuccessfulRequests: true,
+});
+
 // Public signup never links credentials to an existing account.
-app.post('/api/auth/local/signup', async (req, res) => {
+app.post('/api/auth/local/signup', signupRateLimit, async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, firstname, lastname } = req.body || {};
     const em = normalizeEmail(email);
     if (em.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
     if (!validatePassword(password)) return res.status(400).json({ ok: false, error: 'weak_password', minLength: 6 });
+    if (typeof firstname !== 'string' || !firstname.trim()) return res.status(400).json({ ok: false, error: 'firstname_required' });
+    if (typeof lastname !== 'string' || !lastname.trim()) return res.status(400).json({ ok: false, error: 'lastname_required' });
+    if (firstname.trim().length > 100 || lastname.trim().length > 100) return res.status(400).json({ ok: false, error: 'invalid_name', maxLength: 100 });
 
     const usersCol = db.Users.collection();
     const existing = await usersCol.findOne(emailOwnerFilter(em));
@@ -274,8 +291,8 @@ app.post('/api/auth/local/signup', async (req, res) => {
         emailHistory: [em],
         reviewIds: [],
         passwordHash: hash,
-        firstname: '',
-        lastname: '',
+        firstname: firstname.trim(),
+        lastname: lastname.trim(),
         accounts: [{ kind: 'Local', uid: em }],
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -303,7 +320,7 @@ app.post('/api/auth/local/signup', async (req, res) => {
 });
 
 // Local login
-app.post('/api/auth/local/login', async (req, res) => {
+app.post('/api/auth/local/login', loginRateLimit, async (req, res) => {
   try {
     const { email, password } = req.body || {};
     const em = normalizeEmail(email);
@@ -635,6 +652,8 @@ app.post('/api/profile/update', async (req, res) => {
     const { firstname, lastname } = req.body || {};
     const fn = typeof firstname === 'string' ? firstname.trim() : undefined;
     const ln = typeof lastname === 'string' ? lastname.trim() : undefined;
+    if (firstname !== undefined && (!fn || fn.length > 100)) return res.status(400).json({ ok: false, error: 'firstname_required', maxLength: 100 });
+    if (lastname !== undefined && (!ln || ln.length > 100)) return res.status(400).json({ ok: false, error: 'lastname_required', maxLength: 100 });
     const tooLong = (s) => s && s.length > 100;
     if (tooLong(fn) || tooLong(ln)) return res.status(400).json({ ok: false, error: 'field_too_long', max: 100 });
     const users = db.Users.collection();
@@ -686,13 +705,21 @@ app.get('/api/spotify/debug/token', async (req, res) => {
     return res.status(500).json({ ok: false, error: e?.message || 'debug_failed' });
   }
 });
+app.use('/api/spotify', rateLimit({ ...clientRateLimitOptions, windowMs: 30 * 1000, limit: 30 }));
+const maxSpotifyBatchIds = 50;
+
+function sendSpotifyError(res, result) {
+  if (result.retryAfter) res.set('Retry-After', String(result.retryAfter));
+  return res.status(result.status || 500).json({ ok: false, error: result.error });
+}
+
 app.get('/api/spotify/search', async (req, res) => {
   try {
     const { q, type = 'track', limit, market } = req.query;
     if (!q) return res.status(400).json({ ok: false, error: 'missing_query' });
     const lim = limit ? parseInt(limit, 10) : 10;
     const result = await spotify.search(q, type, lim, market);
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] search error', e);
@@ -704,7 +731,7 @@ app.get('/api/spotify/track/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getTrack(id);
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] track error', e);
@@ -716,7 +743,7 @@ app.get('/api/spotify/album/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getAlbum(id);
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] album error', e);
@@ -724,7 +751,7 @@ app.get('/api/spotify/album/:id', async (req, res) => {
   }
 });
 
-// Batch several tracks (up to 50 per Spotify request); chunks if more supplied
+// Spotify accepts up to 50 tracks per request.
 app.get('/api/spotify/tracks', async (req, res) => {
   try {
     const idsParam = req.query.ids;
@@ -732,22 +759,18 @@ app.get('/api/spotify/tracks', async (req, res) => {
     const market = req.query.market;
     const allIds = String(idsParam).split(',').map(s => s.trim()).filter(Boolean);
     if (!allIds.length) return res.status(400).json({ ok: false, error: 'no_ids' });
-    const responses = [];
-    for (let i = 0; i < allIds.length; i += 50) {
-      const chunk = allIds.slice(i, i + 50);
-      const r = await spotify.getSeveralTracks(chunk, market);
-      if (r.error) return res.status(r.status || 500).json({ ok: false, error: r.error });
-      const tracks = Array.isArray(r.data?.tracks) ? r.data.tracks : [];
-      responses.push(...tracks);
-    }
-    return res.json({ ok: true, data: { tracks: responses } });
+    if (allIds.length > maxSpotifyBatchIds) return res.status(400).json({ ok: false, error: 'too_many_ids', maxIds: maxSpotifyBatchIds });
+    const result = await spotify.getSeveralTracks(allIds, market);
+    if (result.error) return sendSpotifyError(res, result);
+    const tracks = Array.isArray(result.data?.tracks) ? result.data.tracks : [];
+    return res.json({ ok: true, data: { tracks } });
   } catch (e) {
     console.error('[Spotify] several tracks error', e);
     return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 
-// Batch several albums (up to 20 per Spotify request); accepts any number by chunking
+// Spotify accepts up to 20 albums per upstream request.
 app.get('/api/spotify/albums', async (req, res) => {
   try {
     const idsParam = req.query.ids;
@@ -759,14 +782,11 @@ app.get('/api/spotify/albums', async (req, res) => {
       .filter(Boolean);
     if (!allIds.length) return res.status(400).json({ ok: false, error: 'no_ids' });
 
-    // Chunk to 20 per Spotify API limitations
-    const chunks = [];
-    for (let i = 0; i < allIds.length; i += 20) chunks.push(allIds.slice(i, i + 20));
-
+    if (allIds.length > maxSpotifyBatchIds) return res.status(400).json({ ok: false, error: 'too_many_ids', maxIds: maxSpotifyBatchIds });
     const responses = [];
-    for (const chunk of chunks) {
-      const r = await spotify.getSeveralAlbums(chunk, market);
-      if (r.error) return res.status(r.status || 500).json({ ok: false, error: r.error });
+    for (let i = 0; i < allIds.length; i += 20) {
+      const r = await spotify.getSeveralAlbums(allIds.slice(i, i + 20), market);
+      if (r.error) return sendSpotifyError(res, r);
       const albums = Array.isArray(r.data?.albums) ? r.data.albums : [];
       responses.push(...albums);
     }
@@ -781,7 +801,7 @@ app.get('/api/spotify/artist/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await spotify.getArtist(id);
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] artist error', e);
@@ -794,7 +814,7 @@ app.get('/api/spotify/artist/:id/albums', async (req, res) => {
     const { id } = req.params;
     const { include_groups = 'album,single', limit = 50, market } = req.query;
     const result = await spotify.getArtistAlbums(id, { include_groups, limit: parseInt(limit, 10) || 50, market });
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] artist albums error', e);
@@ -806,7 +826,7 @@ app.get('/api/spotify/new-releases', async (req, res) => {
   try {
     const { country = 'US', limit = 50 } = req.query;
     const result = await spotify.getNewReleases({ country, limit: parseInt(limit, 10) || 50 });
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] new releases error', e);
@@ -822,7 +842,7 @@ app.get('/api/spotify/recommendations', async (req, res) => {
       params.seed_genres = 'pop,rock';
     }
     const result = await spotify.getRecommendations(params);
-    if (result.error) return res.status(result.status || 500).json({ ok: false, error: result.error });
+    if (result.error) return sendSpotifyError(res, result);
     return res.json({ ok: true, data: result.data });
   } catch (e) {
     console.error('[Spotify] recommendations error', e);
@@ -936,22 +956,8 @@ app.post('/api/reviews/upsert', async (req, res) => {
     if (normRating === undefined) setOnInsertFields.rating = new Int32(0);
     const update = { $set: setFields, $setOnInsert: setOnInsertFields };
 
-    // Debug instrumentation: log intent prior to upsert
-    try {
-      console.log('[Reviews][Upsert][DEBUG] filter=', filter,
-        'set=', setFields,
-        'onInsert=', setOnInsertFields);
-    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
-
     const result = await reviews.findOneAndUpdate(filter, update, { upsert: true, returnDocument: 'after' });
     const doc = result;
-
-    try {
-      console.log('[Reviews][Upsert][DEBUG] upsert doc id=', doc?._id?.toString?.() || null,
-        'rating(raw)=', doc?.rating,
-        'text.len=', typeof doc?.text === 'string' ? doc.text.length : null);
-      console.log('[Reviews][Upsert][DEBUG] result.lastErrorObject=', result?.lastErrorObject || null);
-    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
     // Ensure user's profile records this review's ObjectId
     try {
       const usersCol = db.Users.collection();
@@ -1113,9 +1119,6 @@ app.post('/api/reviews/upsert', async (req, res) => {
               albumUpdate,
               { upsert: true }
             );
-            try {
-              console.log('[Albums][UpsertReviewRef][DEBUG] oid=', oid, 'matched=', albumResult.matchedCount, 'modified=', albumResult.modifiedCount, 'upserted=', albumResult.upsertedId);
-            } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
           } catch (albumReviewRefErr) {
             console.warn('[Albums] failed album atomic upsert (validation?)', albumReviewRefErr?.message || albumReviewRefErr);
           }
@@ -1846,9 +1849,6 @@ app.get('/api/reviews/my', async (req, res) => {
     const reviews = db.Reviews.collection();
     const query = { 'user.oid': userOid, 'item.type': type, 'item.oid': oid };
     const doc = await reviews.findOne(query);
-    try {
-      console.log('[Reviews][my][DEBUG] query=', query, 'found=', !!doc, 'id=', doc?._id?.toString?.() || null);
-    } catch { /* Optional enrichment or diagnostics must not block the main result. */ }
     if (doc && typeof doc.rating === 'number') doc.rating = doc.rating / 2;
     return res.json({ ok: true, review: doc || null });
   } catch (e) {
@@ -1951,8 +1951,6 @@ app.get('/api/reviews/recent', async (req, res) => {
       query['item.type'] = typeFilter;
     }
 
-    console.log('[Reviews][Recent] Query:', JSON.stringify(query), 'typeFilter:', typeFilter, 'limit:', limit, 'offset:', offset);
-
     const cursor = reviewsCol
       .find(query)
       .sort({ createdAt: -1, _id: -1 })
@@ -1960,13 +1958,12 @@ app.get('/api/reviews/recent', async (req, res) => {
       .limit(limit);
 
     const docs = await cursor.toArray();
-    console.log('[Reviews][Recent] Found', docs.length, 'docs, types:', docs.map(d => d?.item?.type).join(','));
     if (!docs.length) return res.json({ ok: true, items: [], nextOffset: null });
 
     const userOids = [...new Set(docs.map(d => d.user?.oid).filter(Boolean))];
     const users = await usersCol
       .find({ _id: { $in: userOids.map(id => new ObjectId(id)) } })
-      .project({ _id: 1, firstname: 1, lastname: 1, email: 1 })
+      .project({ _id: 1, firstname: 1, lastname: 1 })
       .toArray();
     const userMap = new Map(users.map(u => [u._id.toString(), u]));
 
@@ -2095,7 +2092,7 @@ app.get('/api/reviews/recent', async (req, res) => {
       else if (type === 'album') media = albumMap.get(id) || null;
       else if (type === 'artist') media = artistMap.get(id) || null;
       const userDoc = userMap.get(d.user?.oid);
-      const userName = userDoc ? [userDoc.firstname, userDoc.lastname].filter(Boolean).join(' ') || userDoc.email : 'Anonymous';
+      const userName = publicDisplayName(userDoc);
       return {
         id: d._id?.toString?.(),
         type,
@@ -2134,9 +2131,9 @@ app.get('/api/reviews/:reviewId', async (req, res) => {
     // Fetch user info
     const userDoc = review.user?.oid ? await usersCol.findOne(
       { _id: new ObjectId(review.user.oid) },
-      { projection: { firstname: 1, lastname: 1, email: 1 } }
+      { projection: { firstname: 1, lastname: 1 } }
     ) : null;
-    const userName = review.deleted ? '[deleted]' : userDoc ? [userDoc.firstname, userDoc.lastname].filter(Boolean).join(' ') || 'Community member' : 'Community member';
+    const userName = review.deleted ? '[deleted]' : publicDisplayName(userDoc);
 
     // Fetch media info
     const root = review.item?.type === 'review' && ObjectId.isValid(review.threadRoot) ? await reviewsCol.findOne({ _id: new ObjectId(review.threadRoot), threadDeleting: { $ne: true } }) : review;

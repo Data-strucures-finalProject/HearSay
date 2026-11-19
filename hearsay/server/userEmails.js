@@ -3,6 +3,10 @@ import { ObjectId } from 'mongodb';
 export const normalizeAddress = value => String(value || '').trim().toLowerCase();
 export const emailOwnerFilter = address => ({ $or: [{ loginEmails: address }, { email: address }] });
 export const userProjection = { email: 1, firstname: 1, lastname: 1, accounts: 1, loginEmails: 1, googleProfile: 1, role: 1 };
+export const publicDisplayName = user => {
+  const name = [user?.firstname, user?.lastname].map(value => String(value || '').trim()).filter(Boolean).join(' ');
+  return name || 'Community member';
+};
 
 export function publicProfile(user, sessionUser = {}) {
   return {

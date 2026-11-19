@@ -3,5 +3,7 @@ db/backups/
 db/local-demo/
 .env
 .env.*
+.vscode/
 !.env.example
+!/.env.production.example
 nginxrevproxy/**

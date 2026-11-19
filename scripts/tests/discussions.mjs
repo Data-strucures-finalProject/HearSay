@@ -11,7 +11,7 @@ export async function checkDiscussions({ request, database, origin, userId, root
     if (response.headers.get('set-cookie')) secondCookie = response.headers.get('set-cookie').split(';')[0];
     return { status: response.status, data: await response.json() };
   };
-  const signup = await other('/api/auth/local/signup', 'POST', { email: 'discussion-second@example.invalid', password: 'example-password' });
+  const signup = await other('/api/auth/local/signup', 'POST', { email: 'discussion-second@example.invalid', password: 'example-password', firstname: 'Discussion', lastname: 'Reviewer' });
   assert.equal(signup.status, 200);
   const secondId = signup.data.user.oid;
   for (const type of ['song', 'album', 'artist']) assert.equal((await request(`/api/discussions?type=${type}&oid=audit-track`)).status, 200);

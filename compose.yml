@@ -13,14 +13,12 @@ services:
     image: mongo:latest # Or specify a version like mongo:6.0
     container_name: hearsay_mongodb
     ports:
-      - "27017:27017" # Map host port 27017 to container port 27017
+      - "127.0.0.1:27017:27017"
     volumes:
       - ./db/data:/data/db # Persist data in a named volume
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
-    env_file:
-      - ./.env
     restart: unless-stopped # Restart policy
     networks:
       app-network:
@@ -32,10 +30,14 @@ services:
       dockerfile: dockerfile.backend
     container_name: hearsay_backend
     ports:
-      - "5174:5174"
+      - "127.0.0.1:5174:5174"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       SCHEMA_DIR: /app/db-schemas
+      TRUST_PROXY: 172.19.0.102
+      CLOUDFLARE_TUNNEL_TOKEN: ""
+      INITIAL_ADMIN_EMAIL: ""
+      INITIAL_ADMIN_PASSWORD: ""
     env_file:
       - ./.env
     volumes:
@@ -61,7 +63,7 @@ services:
         VITE_GOOGLE_REDIRECT_URI: ${VITE_GOOGLE_REDIRECT_URI}
     container_name: hearsay_frontend
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       VITE_API_BASE: /api
@@ -82,14 +84,27 @@ services:
     image: 'jc21/nginx-proxy-manager:latest'
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "8181:81"
+      - "127.0.0.1:8181:81"
     environment:
       TZ: "America/Toronto"
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
     volumes:
       - ./nginxrevproxy/data:/data
       - ./nginxrevproxy/letsencrypt:/etc/letsencrypt   
     networks:
       app-network:
         ipv4_address: 172.19.0.104
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunnel]
+    command: [tunnel, --no-autoupdate, run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    depends_on:
+      - nginx-rev-proxy
+    networks:
+      app-network:
+        ipv4_address: 172.19.0.105
