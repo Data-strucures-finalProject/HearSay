@@ -25,6 +25,7 @@ import { installViews, mountInsightRoutes } from './insights.js';
 import { ensureDiscussionIndexes, mountDiscussionRoutes, removeThread, withDiscussionLock } from './discussions.js';
 import { getReviewMedia } from './reviewMedia.js';
 import { ensureMediaIndexes } from './schemaIndexes.js';
+import { normalizeTrackRatings } from './trackRatings.js';
 
 // Load .env in development so server can read GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 dotenv.config();
@@ -843,12 +844,13 @@ app.post('/api/reviews/upsert', async (req, res) => {
     if (text !== undefined && typeof text !== 'string') return res.status(400).json({ ok: false, error: 'invalid_text' });
     if (typeof text === 'string' && text.length > 8000) return res.status(400).json({ ok: false, error: 'text_too_long', maxChars: 8000 });
 
-    if (trackRatings !== undefined && (
-      type !== 'album' || !trackRatings || typeof trackRatings !== 'object' || Array.isArray(trackRatings) ||
-      Object.entries(trackRatings).some(([trackId, score]) =>
-        !/^[A-Za-z0-9-]{1,64}$/.test(trackId) || !Number.isFinite(score) || score < 0.5 || score > 5 || !Number.isInteger(score * 2)
-      )
-    )) return res.status(400).json({ ok: false, error: 'invalid_track_ratings' });
+    let storedTrackRatings;
+    if (trackRatings !== undefined) {
+      try {
+        if (type !== 'album') throw new Error('invalid_track_ratings');
+        storedTrackRatings = normalizeTrackRatings(trackRatings);
+      } catch { return res.status(400).json({ ok: false, error: 'invalid_track_ratings' }); }
+    }
 
     // If this is the first artist review/rating, ensure an Artist document exists
     if (type === 'artist') {
@@ -915,7 +917,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
 
     // Store trackRatings for albums
     if (type === 'album' && trackRatings !== undefined) {
-      setFields.trackRatings = trackRatings;
+      setFields.trackRatings = storedTrackRatings;
     }
 
     const setOnInsertFields = {
@@ -1464,7 +1466,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
         const nowIso = new Date().toISOString();
         const set = { updatedAt: nowIso };
         if (typeof text === 'string') set.text = String(text).trim();
-        if (type === 'album' && trackRatings !== undefined) set.trackRatings = trackRatings;
+        if (type === 'album' && trackRatings !== undefined) set.trackRatings = normalizeTrackRatings(trackRatings);
         if (Number.isFinite(rating) && rating >= 0.5 && rating <= 5) {
           const snapped = Math.round(rating * 2) / 2;
           set.rating = new Int32(Math.round(snapped * 2));
