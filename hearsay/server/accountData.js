@@ -10,7 +10,7 @@ async function* accountRecords(database, oid) {
   for await (const review of database.collection('reviews').find({ 'user.oid': { $in: [oid, new ObjectId(oid)] } }).sort({ _id: 1 })) {
     const common = { account_id: oid, review_id: review._id, item_type: review.item?.type, item_id: review.item?.oid };
     yield { ...common, record_type: review.item?.type === 'review' ? 'comment' : 'review', review_title: review.title, rating: typeof review.rating === 'number' ? review.rating / 2 : '', review_text: review.text, likes: review.likes, dislikes: review.dislikes, created_at: review.createdAt, updated_at: review.updatedAt };
-    for (const [track_id, track_rating] of Object.entries(review.trackRatings || {})) yield { ...common, record_type: 'track_rating', track_id, track_rating };
+    for (const { trackId: track_id, rating: track_rating } of review.trackRatings || []) yield { ...common, record_type: 'track_rating', track_id, track_rating };
   }
 }
 

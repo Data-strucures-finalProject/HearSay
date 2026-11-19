@@ -92,7 +92,8 @@ export async function checkSchemaContracts(database, rootReview) {
     await bad('albums', 'duplicate song references', doc => { doc.songs = [{ name: 'One', oid: id }, { name: 'Two', oid: id }]; });
     await bad('songs', 'missing artist Spotify ID', doc => { delete doc.artist.spotifyArtistId; });
     await good('reviews', { ...fixtures.reviews, rating: 0, text: 'Text-only review' });
-    await good('reviews', { ...fixtures.reviews, item: { type: 'album', oid: 'fixture-album' }, trackRatings: { track: 3.5 } });
+    await good('reviews', { ...fixtures.reviews, item: { type: 'album', oid: 'fixture-album' }, trackRatings: [{ trackId: 'track', rating: new Double(3.5) }] });
+    await good('reviews', { ...fixtures.reviews, item: { type: 'album', oid: 'fixture-album' }, trackRatings: [] });
     await good('reviews', { ...fixtures.reviews, votes: [{ userOid: id, value: 1 }], likes: 1 });
     for (const [label, change] of [
       ['missing rating', doc => { delete doc.rating; }],
@@ -112,9 +113,14 @@ export async function checkSchemaContracts(database, rootReview) {
       ['embedded comments', doc => { doc.comments = [{ oid: id, text: 'Embedded body' }]; }],
       ['long review', doc => { doc.text = 'x'.repeat(8001); }],
       ['too many words', doc => { doc.text = 'word '.repeat(1001); }],
-      ['track ratings on song', doc => { doc.trackRatings = { track: 3.5 }; }],
-      ['invalid track half-star', doc => { doc.item.type = 'album'; doc.trackRatings = { track: 3.2 }; }],
-      ['invalid track key', doc => { doc.item.type = 'album'; doc.trackRatings = { 'bad.key': 4 }; }],
+      ['track ratings on song', doc => { doc.trackRatings = [{ trackId: 'track', rating: new Double(3.5) }]; }],
+      ['invalid track half-star', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'track', rating: new Double(3.2) }]; }],
+      ['invalid track key', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'bad.key', rating: new Double(4) }]; }],
+      ['legacy track map', doc => { doc.item.type = 'album'; doc.trackRatings = { track: 4 }; }],
+      ['integer track score', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'track', rating: 4 }]; }],
+      ['duplicate track IDs', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'track', rating: new Double(4) }, { trackId: 'track', rating: new Double(3) }]; }],
+      ['extra track fields', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'track', rating: new Double(4), extra: true }]; }],
+      ['missing track score', doc => { doc.item.type = 'album'; doc.trackRatings = [{ trackId: 'track' }]; }],
       ['root carrying depth', doc => { doc.depth = 1; }],
       ['updated before creation', doc => { doc.updatedAt = '2026-11-16T12:00:00.000Z'; }],
     ]) await bad('reviews', label, change);
@@ -133,7 +139,7 @@ export async function checkSchemaContracts(database, rootReview) {
       ['wrong nested root', doc => { doc.depth = 2; }],
       ['tombstone retaining author', doc => { doc.deleted = true; doc.text = ''; }],
       ['tombstone retaining text', doc => { doc.deleted = true; doc.user.oid = ''; }],
-      ['comment track ratings', doc => { doc.trackRatings = { track: 4 }; }],
+      ['comment track ratings', doc => { doc.trackRatings = [{ trackId: 'track', rating: new Double(4) }]; }],
     ]) await bad('reviews', label, change, comment);
 
     // Strict mode checks updates even when a legacy document is already invalid.
