@@ -14,7 +14,7 @@ Choose the example for the way you run the app. Copy it only when creating a new
 
 1. Copy the example that matches the setup: `.env.example` for Docker development or `.env.production.example` for public deployment.
 2. Replace every placeholder credential. Keep `MONGO_USERNAME`/`MONGO_PASSWORD` for the MongoDB administrative account. Set a separate strong `MONGO_APP_USERNAME`/`MONGO_APP_PASSWORD`; startup creates or updates that runtime account with `readWrite` access to `MONGO_DB_NAME`.
-3. Set `SESSION_SECRET` to a stable random secret. Set `SESSION_COOKIE_SECURE=false` only for local HTTP; keep it `true` for production.
+3. Set `SESSION_SECRET` to a stable random secret of at least 32 bytes. Set `SESSION_COOKIE_SECURE=false` only for local HTTP; keep it `true` for production.
 4. Set `API_ORIGIN` to the exact allowed browser origin. Production also requires HTTPS except for explicit localhost origins.
 5. Set Spotify and Google credentials only if those integrations are needed. Keep all `GOOGLE_CLIENT_SECRET`, `SPOTIFY_CLIENT_SECRET`, database passwords, session secrets, and tunnel tokens outside frontend `VITE_*` variables.
 6. Start Docker:
@@ -61,7 +61,7 @@ Docker Desktop or Docker Engine with the Compose plugin is the recommended setup
    docker compose ps
    ```
 
-4. When the backend and frontend are healthy, open **http://localhost:8080**. Create a local account from the sign-in page to write reviews. Fresh databases start without sample reviews. An optional demo seed is documented in [MongoDB operations](db/mongo-cli.md#demo-seed).
+4. When the backend and frontend are healthy, open **http://localhost:8080**. Create a local account from the sign-in page to write reviews. To populate a fresh development database with a sample catalogue, reviews, and discussions, see [Example data](db/mongo-cli.md#example-data).
 
 The standard Compose stack and [`compose.db.yml`](compose.db.yml) publish MongoDB only on host loopback. Do not remove the `127.0.0.1:` host binding or expose MongoDB directly to a network or the internet.
 
@@ -72,7 +72,7 @@ docker compose exec -T backend npm run db:validate
 docker compose logs --tail 100 mongodb backend frontend
 ```
 
-Run `docker compose down` to stop the app. MongoDB data persists in `db/data`. After changing Google frontend settings, rebuild the frontend with `docker compose up --build -d frontend`.
+Run `docker compose down` to stop the app. MongoDB data persists in the `hearsay_mongodb_data` named volume. After changing Google frontend settings, rebuild the frontend with `docker compose up --build -d frontend`.
 
 ## Production setup (online access)
 
@@ -182,6 +182,8 @@ Use Node.js **24 LTS** with npm, matching the Docker build and runtime. Run Mong
 Open **http://localhost:5173**. Vite proxies `/api` to Express on port **5174**. If the browser opens on another port because 5173 is occupied, free port 5173 and restart the dev servers so the configured origin and Google callback remain valid. Stop the servers with Ctrl+C. To stop a MongoDB container started for native development, run `docker compose -f compose.db.yml down` from the repository root.
 
 ## Upgrade an existing database
+
+Both Compose files use the same `hearsay_mongodb_data` named volume. Existing files under `db/data` are not imported automatically; back up and restore that database explicitly before switching an older bind-mount installation. `docker compose down` retains the named volume; adding `--volumes` deletes it.
 
 If your database has old album reviews with `trackRatings` stored as maps, run the [one-time track-rating migration](db/mongo-cli.md#upgrade-existing-track-ratings) before starting the updated app. It preserves review content and rating values. Fresh installs and previously migrated databases can use the startup steps above directly.
 

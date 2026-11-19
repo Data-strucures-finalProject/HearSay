@@ -9,12 +9,13 @@ import { createHash } from 'node:crypto';
 const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-browser', args: ['--no-sandbox', '--disable-dev-shm-usage', '--unsafely-treat-insecure-origin-as-secure=http://frontend'] });
 const results = [];
 try {
-  for (const scenario of ['collision', 'success', 'cancel', 'bad-state', 'signin']) {
+  for (const scenario of ['collision', 'success', 'cancel', 'bad-state', 'signin', 'signin-collision']) {
     const context = await browser.newContext();
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    let startIntent, challenge, exchanges = 0, linked = false, signedIn = scenario !== 'signin';
+    const signingIn = scenario.startsWith('signin');
+    let startIntent, challenge, exchanges = 0, linked = false, signedIn = !signingIn;
     const user = { oid: '000000000000000000000001', email: 'local@example.invalid', firstname: 'Local', lastname: 'Tester' };
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname;
@@ -32,6 +33,7 @@ try {
         assert.equal(payload.state, 'fixture-google-state');
         assert.equal(createHash('sha256').update(payload.code_verifier).digest('base64url'), challenge);
         if (scenario === 'collision') { status = 409; body = { ok: false, error: 'google_account_in_use' }; }
+        else if (scenario === 'signin-collision') { status = 409; body = { ok: false, error: 'google_link_required' }; }
         else { linked = scenario === 'success'; signedIn = true; body = { ok: true, user, linked }; }
       } else body = { ok: true, data: { albums: { items: [] }, tracks: { items: [] } } };
       return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -43,11 +45,16 @@ try {
       const query = scenario === 'cancel' ? 'error=access_denied&state=fixture-google-state' : `code=fixture-code&state=${scenario === 'bad-state' ? 'wrong-state' : 'fixture-google-state'}`;
       return route.fulfill({ status: 302, headers: { location: `http://frontend/auth/callback?${query}` } });
     });
-    await page.goto(scenario === 'signin' ? 'http://frontend/auth' : 'http://frontend/profile');
+    await page.goto(signingIn ? 'http://frontend/auth' : 'http://frontend/profile');
     assert.equal(await page.getByRole('region', { name: 'Choose Google profile details' }).count(), 0);
     assert.equal(await page.getByRole('button', { name: 'Use Google profile details', exact: true }).count(), 0);
-    await page.getByRole('button', { name: scenario === 'signin' ? 'Continue with Google' : 'Link Google Account', exact: true }).click();
-    if (['collision', 'cancel', 'bad-state'].includes(scenario)) {
+    await page.getByRole('button', { name: signingIn ? 'Continue with Google' : 'Link Google Account', exact: true }).click();
+    if (scenario === 'signin-collision') {
+      await page.getByRole('alert').waitFor();
+      assert.match(await page.getByRole('alert').innerText(), /link Google from Profile/);
+      assert.equal(signedIn, false);
+      assert.equal(exchanges, 1);
+    } else if (['collision', 'cancel', 'bad-state'].includes(scenario)) {
       await page.getByRole('alert').waitFor();
       assert.equal(new URL(page.url()).pathname, '/profile');
       if (scenario === 'collision') assert.match(await page.getByRole('alert').innerText(), /already linked to another HearSay account/);
@@ -67,7 +74,7 @@ try {
       await page.waitForURL('http://frontend/');
       assert.equal(exchanges, 1);
     }
-    assert.equal(startIntent, scenario === 'signin' ? 'signin' : 'link');
+    assert.equal(startIntent, signingIn ? 'signin' : 'link');
     assert.equal(await page.evaluate(() => sessionStorage.getItem('google_auth_flow')), null);
     assert.deepEqual(errors, []);
     results.push({ scenario, passed: true, exchanges });

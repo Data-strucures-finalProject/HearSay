@@ -20,7 +20,7 @@ The backend image includes `pdftotext` for account-PDF export tests. Browser sui
 
 | Location | Purpose |
 | --- | --- |
-| `runtime.mjs` | API, database, authentication, admin roles, email management, export and deletion regressions |
+| `runtime.mjs` | API, database, authentication, admin roles, email management, export/deletion, Google email collisions, password reauthentication/session revocation, rotation, cache/log privacy and production CSRF regressions |
 | `discussions.mjs` | Runtime discussion checks: migration, threaded references, paging, permissions, retry idempotency, votes, deletion and analytical counts |
 | `schemas.mjs` | Runtime schema contracts: valid/invalid documents, BSON types, identity indexes, session envelopes, strict legacy updates, unchanged validators after failed preflight and drift detection |
 | `track-ratings.mjs` | Runtime migration checks: dry-run, unchanged data/validators after failed preflight, preserved review values, uniform BSON Double scores, idempotence and legacy-map rejection after migration |

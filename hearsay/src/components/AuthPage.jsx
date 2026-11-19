@@ -52,6 +52,7 @@ export default function AuthPage() {
         if (resp.status === 429) setError('Too many attempts. Please wait and try again.');
         else if (errCode === 'email_in_use') setError('An account with that email already exists.');
         else if (errCode === 'weak_password') setError(`Password must be at least ${data.minLength || 6} characters.`);
+        else if (errCode === 'password_too_long') setError('Password must be at most 72 UTF-8 bytes. Use fewer characters.');
         else if (errCode === 'invalid_credentials') setError('Invalid email or password.');
         else if (errCode === 'no_local_account') setError('No local account. Try registering or linking first.');
         else if (errCode === 'invalid_email') setError('Invalid email address.');

@@ -43,6 +43,9 @@ const {
 } = process.env;
 
 const EFFECTIVE_SESSION_SECRET = SESSION_SECRET || crypto.randomBytes(48).toString('hex');
+if (process.env.NODE_ENV === 'production' && (!SESSION_SECRET || Buffer.byteLength(SESSION_SECRET) < 32)) {
+  throw new Error('[CONFIG] SESSION_SECRET must contain at least 32 bytes in production');
+}
 if (!SESSION_SECRET) {
   console.warn('[CONFIG] Using generated session secret (provide SESSION_SECRET for persistence)');
 }
@@ -65,6 +68,11 @@ const SESSION_TTL_NUM = parseInt(SESSION_TTL_SECONDS, 10) || 3600;
 const SESSION_ROTATE_MS_NUM = parseInt(SESSION_ROTATE_MS, 10) || 3600000;
 
 const app = express();
+app.disable('x-powered-by');
+app.use('/api', (req, res, next) => {
+  res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
+  next();
+});
 const PORT = process.env.PORT || 5174;
 // Bcrypt cost factor used for new or changed local passwords.
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '12', 10) || 12;
@@ -145,7 +153,7 @@ await db.connectMongoApp().catch((err) => {
   process.exit(1);
 });
 
-if (!process.env.MONGO_APP_USERNAME) {
+if (!db.usingAppCredentials) {
   // Existing installs and native development use the configured database
   // account for startup maintenance.
   await initializeUserEmails(db.getDb());
@@ -188,17 +196,12 @@ app.use(
   })
 );
 
-mountAccountData(app, db.getDb(), { sessionName: SESSION_NAME, sessionsCollection: SESSIONS_COLLECTION });
-mountAdminRoutes(app, db.getDb());
-mountInsightRoutes(app, db.getDb());
-mountDiscussionRoutes(app, db.getDb());
-
 // Rotate session id every SESSION_ROTATE_MS to mitigate fixation
 app.use((req, res, next) => {
   // rotate session using coerced numeric value
   if (!req.session?.user) return next();
   const now = Date.now();
-  const last = req.session.__lastRotated || 0;
+  const last = req.session.__lastRotated || now;
   if (now - last > SESSION_ROTATE_MS_NUM) {
     const preserve = { ...req.session };
     req.session.regenerate(err => {
@@ -213,26 +216,14 @@ app.use((req, res, next) => {
   }
 });
 
-// Simple request logging to help diagnose requests from the frontend (method, url, small body preview)
+mountAccountData(app, db.getDb(), { sessionName: SESSION_NAME, sessionsCollection: SESSIONS_COLLECTION });
+mountAdminRoutes(app, db.getDb());
+mountInsightRoutes(app, db.getDb());
+mountDiscussionRoutes(app, db.getDb());
+
+// Log paths only: query parameters and bodies may contain credentials or private content.
 app.use((req, res, next) => {
-  try {
-    let safeBody = null;
-    if (req.body && typeof req.body === 'object' && Object.keys(req.body).length) {
-      // Shallow clone and mask password-like fields
-      const clone = { ...req.body };
-      for (const k of Object.keys(clone)) {
-        if (/password|pwd|secret|token|verifier|authorization|^code$|^state$/i.test(k)) {
-          // Preserve length info without exposing value
-          const v = typeof clone[k] === 'string' ? clone[k] : '';
-          clone[k] = v ? `***masked(len=${v.length})***` : '***masked***';
-        }
-      }
-      safeBody = JSON.stringify(clone).slice(0, 300); // longer slice since we masked sensitive values
-    }
-    console.log('[SERVER] Incoming', req.method, req.originalUrl, safeBody ? `body=${safeBody}` : '');
-  } catch {
-    console.log('[SERVER] Incoming', req.method, req.originalUrl);
-  }
+  console.log('[SERVER] Incoming', req.method, req.path);
   next();
 });
 
@@ -265,6 +256,7 @@ const loginRateLimit = rateLimit({
   limit: 20,
   skipSuccessfulRequests: true,
 });
+const passwordRateLimit = rateLimit({ ...clientRateLimitOptions, windowMs: 15 * 60 * 1000, limit: 20, skipSuccessfulRequests: true });
 
 // Public signup never links credentials to an existing account.
 app.post('/api/auth/local/signup', signupRateLimit, async (req, res) => {
@@ -272,6 +264,7 @@ app.post('/api/auth/local/signup', signupRateLimit, async (req, res) => {
     const { email, password, firstname, lastname } = req.body || {};
     const em = normalizeEmail(email);
     if (em.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return res.status(400).json({ ok: false, error: 'invalid_email' });
+    if (typeof password === 'string' && Buffer.byteLength(password) > 72) return res.status(400).json({ ok: false, error: 'password_too_long', maxBytes: 72 });
     if (!validatePassword(password)) return res.status(400).json({ ok: false, error: 'weak_password', minLength: 6 });
     if (typeof firstname !== 'string' || !firstname.trim()) return res.status(400).json({ ok: false, error: 'firstname_required' });
     if (typeof lastname !== 'string' || !lastname.trim()) return res.status(400).json({ ok: false, error: 'lastname_required' });
@@ -348,15 +341,21 @@ app.post('/api/auth/local/login', loginRateLimit, async (req, res) => {
 });
 
 // Set or change password for logged-in user (linking when Google-only)
-app.post('/api/auth/local/set-password', async (req, res) => {
+app.post('/api/auth/local/set-password', passwordRateLimit, async (req, res) => {
   try {
     const userOid = req.session?.user?.oid;
     if (!userOid) return res.status(401).json({ ok: false, error: 'unauthorized' });
     const { password } = req.body || {};
+    if (typeof password === 'string' && Buffer.byteLength(password) > 72) return res.status(400).json({ ok: false, error: 'password_too_long', maxBytes: 72 });
     if (!validatePassword(password)) return res.status(400).json({ ok: false, error: 'weak_password', minLength: 6 });
     const usersCol = db.Users.collection();
     const userDoc = await usersCol.findOne({ _id: new ObjectId(userOid) });
     if (!userDoc) return res.status(404).json({ ok: false, error: 'not_found' });
+    // Existing local credentials can only be replaced after proving knowledge of them.
+    if (userDoc.passwordHash && (typeof req.body?.currentPassword !== 'string' ||
+      !await bcrypt.compare(req.body.currentPassword, userDoc.passwordHash))) {
+      return res.status(401).json({ ok: false, error: 'invalid_current_password' });
+    }
     const hash = await bcrypt.hash(String(password), BCRYPT_ROUNDS);
     await usersCol.updateOne(
       { _id: userDoc._id },
@@ -365,6 +364,15 @@ app.post('/api/auth/local/set-password', async (req, res) => {
         $addToSet: { accounts: { kind: 'Local', uid: userDoc.email } },
       }
     );
+    // Changing credentials revokes other devices and pending linking flows.
+    const sessionUser = { ...req.session.user };
+    await db.getDb().collection(SESSIONS_COLLECTION).deleteMany({
+      $or: [{ 'session.user.oid': userOid }, { 'session.googleAuth.userOid': userOid }],
+    });
+    await new Promise((resolve, reject) => req.session.regenerate(err => err ? reject(err) : resolve()));
+    req.session.user = sessionUser;
+    req.session.__lastRotated = Date.now();
+    await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
     return res.json({ ok: true, linked: true });
   } catch (e) {
     console.error('[AuthLocal] set-password error', e);
@@ -525,8 +533,10 @@ app.post('/api/auth/google/exchange', async (req, res) => {
 
     const identityOwner = await usersCol.findOne(googleIdentity);
     const emailOwner = identityOwner || await usersCol.findOne(emailOwnerFilter(googleEmail));
-    if (emailOwner?.deletionPending && !identityOwner) return res.status(409).json({ ok: false, error: 'account_deletion_pending' });
-    const filter = emailOwner ? { _id: emailOwner._id } : { email: googleEmail };
+    // Matching an email does not prove ownership of an existing HearSay account.
+    // Link new provider identities only from an authenticated Profile flow.
+    if (emailOwner && !identityOwner) return res.status(409).json({ ok: false, error: 'google_link_required' });
+    const filter = identityOwner ? { _id: identityOwner._id } : googleIdentity;
     const signInTimestamp = new Date();
     const signInUpdate = {
       $set: { updatedAt: signInTimestamp.toISOString(), googleProfile: googleDetails },
@@ -564,9 +574,10 @@ app.post('/api/auth/google/exchange', async (req, res) => {
         }
       }
     } catch (e) {
-      // If uniqueness constraints triggered during a race, read the existing doc
+      // A concurrent request may have created the same Google identity. Never
+      // authenticate an email-only collision after a uniqueness failure.
       if (e && (e.code === 11000 || /duplicate key/i.test(String(e)))) {
-        userDoc = await usersCol.findOne(googleIdentity) || await usersCol.findOne(filter);
+        userDoc = await usersCol.findOne(googleIdentity);
       } else {
         throw e;
       }
@@ -587,15 +598,6 @@ app.post('/api/auth/google/exchange', async (req, res) => {
       firstname: userDoc?.firstname || firstname,
       lastname: userDoc?.lastname || lastname,
     };
-    req.session.oauth = {
-      provider: 'google',
-      access_token: data.access_token,
-      expires_in: data.expires_in,
-      token_type: data.token_type,
-      scope: data.scope,
-      refresh_token: data.refresh_token,
-      received_at: Date.now(),
-    };
 
     // Persist session then respond with a trimmed payload
     await new Promise((resolve, reject) => req.session.save(err => err ? reject(err) : resolve()));
@@ -605,7 +607,7 @@ app.post('/api/auth/google/exchange', async (req, res) => {
     return res.json({ ok: true, user: req.session.user });
   } catch (err) {
     console.error('Exchange error', err);
-    return res.status(500).json({ error: 'exchange_failed', message: String(err) });
+    return res.status(500).json({ error: 'exchange_failed' });
   }
 });
 
@@ -1114,7 +1116,7 @@ app.post('/api/reviews/upsert', async (req, res) => {
               $setOnInsert: { createdAt: nowIso },
               $addToSet: { reviews: { review_oid: reviewIdStr, user_oid: userOid } },
             };
-            const albumResult = await albumsCol.updateOne(
+            await albumsCol.updateOne(
               { spotifyAlbumId: oid },
               albumUpdate,
               { upsert: true }

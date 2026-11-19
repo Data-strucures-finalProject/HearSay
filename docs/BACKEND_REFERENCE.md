@@ -21,7 +21,7 @@ Authenticated routes require a server session with `user.oid`. Review mutations 
 | POST `/api/logout` | Session | Destroy session and clear cookie |
 | POST `/api/auth/local/signup` | Public | `{email,password,firstname,lastname}`; create a named user; existing email returns 409 |
 | POST `/api/auth/local/login` | Public | Normalize email, bcrypt password check, establish session |
-| POST `/api/auth/local/set-password` | Authenticated | `{password}`; set/change password and Local account kind |
+| POST `/api/auth/local/set-password` | Authenticated | `{password,currentPassword}`; current password required when already set; revoke prior sessions and create a new session |
 | POST `/api/auth/google/start` | Public for signin; authenticated for link | `{intent: signin\|link,code_challenge}`; saves a ten-minute session-bound flow and returns state |
 | POST `/api/auth/google/exchange` | Matching initiating session | `{code,state,redirect_uri,code_verifier}`; verifies/consumes the flow, then signs in or links according to the server-stored intent |
 | GET `/api/profile` | Authenticated | Safe profile, role, saved emails, Google display details and account kinds |
@@ -71,6 +71,11 @@ identity cannot replace one already linked to the current user. Linking preserve
 the user's primary email, password and reviews and returns to Profile. Accounts
 are not merged. Normal Google sign-in resolves the stable provider UID first,
 retaining the linked user's primary email even when the Google email differs.
+An unlinked Google identity whose email already belongs to an account returns
+409 `google_link_required`; sign in with that account's existing login method
+and link Google from Profile. Email matches never automatically link accounts,
+including after a concurrent insert collision. Google access and refresh tokens
+are used only during the exchange and are not retained in new sessions.
 
 ## Analytical queries
 
@@ -110,7 +115,7 @@ Upstream availability depends on the configured Spotify application. Album detai
 
 ## Diagnostics
 
-The server includes `/api/test` and `/api/session` for health/session inspection. `/api/debug/routes`, `/api/reviews/debug/find`, `/api/reviews/debug/list` and `/api/spotify/debug/token` return 404 in production. Development review diagnostics also require a user session. Spotify diagnostics return only hasToken/expiresAt, never the cached token. OAuth exchange logs status rather than token contents, and request logging masks authorization codes/verifiers and password/token fields.
+The server includes `/api/test` and `/api/session` for health/session inspection. `/api/debug/routes`, `/api/reviews/debug/find`, `/api/reviews/debug/list` and `/api/spotify/debug/token` return 404 in production. Development review diagnostics also require a user session. Spotify diagnostics return only hasToken/expiresAt, never the cached token. OAuth exchange logs status rather than token contents. Request logging records method and path only, excluding query parameters and bodies. API responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
 
 Most route errors use `{ok:false,error}`; Google forwarding and Express default errors can have other shapes or HTML responses.
 
@@ -152,7 +157,7 @@ Run `npm run db:validate` from `hearsay` for read-only canonical-schema checks, 
 
 ## Configuration
 
-`DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` seed one default administrator at startup, defaulting to `admin@hearsay.com` / `password`. Set them in the root `.env` for Compose, or the backend's environment for native development. Change the initial password before a public deployment. Passwords are bcrypt-hashed. A unique `isDefaultAdmin` marker persists independently of email/password changes: later restarts or environment edits do not reset credentials or create another default admin. If the configured email/alias is already owned by a regular user, bootstrap refuses to promote it and reports the conflict; choose an unused address.
+`DEFAULT_ADMIN_EMAIL` and `DEFAULT_ADMIN_PASSWORD` seed one default administrator at startup. Development defaults to `admin@hearsay.com` / `password`; production requires an explicit password before creating its first admin. Set them in the root `.env` for Compose, or the backend's environment for native development. Passwords are bcrypt-hashed. A unique `isDefaultAdmin` marker persists independently of email/password changes: later restarts or environment edits do not reset credentials or create another default admin. If the configured email/alias is already owned by a regular user, bootstrap refuses to promote it and reports the conflict; choose an unused address.
 
 Users have a server-owned `role` of `user` or `admin`; legacy users without a role are treated as users. Unauthenticated visitors are guests and have no stored role. Public signup, profile updates and Google linking cannot assign roles. Each authenticated request refreshes the role from MongoDB, and admin middleware independently checks it. The UI uses `/api/me` to show the Admin tab and protect `/admin`; localStorage is not authorization. Role changes take effect on the next request. The initial Admin page is an overview, not a user-management console.
 
@@ -167,7 +172,7 @@ Run from `hearsay`. The API/db helper load `.env.development` or `.env.productio
 | MONGO_APP_AUTH_SOURCE | Runtime account authentication database; defaults to MONGO_DB_NAME |
 | MONGO_HOST, MONGO_PORT, MONGO_PROTOCOL, MONGO_AUTH_SOURCE | localhost, 27017, mongodb, admin |
 | MONGO_DB_NAME | hearsay; set explicitly for consistent domain/session storage |
-| SESSION_SECRET, SESSION_NAME | Stable secret; otherwise regenerated each restart; cookie hsid |
+| SESSION_SECRET, SESSION_NAME | Production requires a stable secret of at least 32 bytes; development generates one if omitted; cookie hsid |
 | SESSION_TTL_SECONDS, SESSION_ROTATE_MS | 3600 seconds, 3600000 milliseconds |
 | SESSION_COOKIE_SECURE | Exact string true enables Secure; default true in production |
 | TRUST_PROXY | Trusted Express proxy address or subnet. Defaults to loopback for native development. Compose sets the frontend container address. |
@@ -179,7 +184,7 @@ Run from `hearsay`. The API/db helper load `.env.development` or `.env.productio
 | BCRYPT_ROUNDS | 12 |
 | SCHEMA_DIR | Optional initializer directory override |
 
-Legacy VITE-prefixed server fallbacks exist but must not be used for secrets. Cookies are httpOnly, SameSite=Lax, rolling and TTL-backed. Authenticated requests periodically regenerate session IDs.
+Legacy VITE-prefixed server fallbacks exist but must not be used for secrets. Cookies are httpOnly, SameSite=Lax, rolling and TTL-backed. Authenticated requests periodically regenerate session IDs across all route modules. New passwords must contain at least six characters and at most 72 UTF-8 bytes to avoid bcrypt truncation. Password changes require the existing password, revoke prior sessions and pending linking flows, and rotate the current session; first password setup remains available to authenticated Google-only users. Password setup/change has a separate limit of 20 unsuccessful requests per 15 minutes per client.
 
 Public review, discussion, and recent-review responses expose a display name only. Email addresses are never used as public author fallbacks. Local signup requires `firstname` and `lastname`; profile updates require both names to remain nonblank and reject values longer than 100 characters. Google sign-in can provide names, and startup may copy names already saved in the Google profile; an account with no usable name is shown as `Community member`.
 
@@ -189,4 +194,4 @@ Local login allows 20 failed requests per 15 minutes per client. Local signup al
 
 The current counters are process-local and do not coordinate multiple backend replicas. Scaling the API to more than one instance requires a shared store or edge-enforced rate limiting.
 
-Compose provisions `MONGO_APP_USERNAME` with `readWrite` access to `MONGO_DB_NAME` using the configured administrative `MONGO_USERNAME`/`MONGO_PASSWORD`. Normal backend requests use the app account; schema, view, and default-admin startup steps use the administrative account. If `MONGO_APP_USERNAME` is omitted, existing installations continue to use the administrative account as a fallback. The database port is loopback-bound in the standard stack.
+Compose provisions `MONGO_APP_USERNAME` in `MONGO_APP_AUTH_SOURCE` (default `MONGO_DB_NAME`) with `readWrite` access to `MONGO_DB_NAME`, using the configured administrative `MONGO_USERNAME`/`MONGO_PASSWORD`. Provisioning refuses to overwrite the administrative account. Normal backend requests use the app account; schema, view, and default-admin startup steps use the administrative account. If `MONGO_APP_USERNAME` is omitted, existing installations continue to use the administrative account as a fallback. The database port is loopback-bound in the standard stack.

@@ -8,10 +8,13 @@ export async function initializeDefaultAdmin(database, env = process.env) {
   // The persisted marker survives email/password changes. Environment values
   // only seed the account, never reset or promote an existing account.
   if (await users.findOne({ isDefaultAdmin: true })) return { created: false };
+  if (env.NODE_ENV === 'production' && !env.DEFAULT_ADMIN_PASSWORD) {
+    throw new Error('DEFAULT_ADMIN_PASSWORD is required to create the first production administrator.');
+  }
   const email = normalizeAddress(env.DEFAULT_ADMIN_EMAIL || 'admin@hearsay.com');
   const password = env.DEFAULT_ADMIN_PASSWORD || 'password';
-  if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || typeof password !== 'string' || password.length < 6) {
-    throw new Error('Default admin configuration requires a valid email and a password of at least six characters.');
+  if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || typeof password !== 'string' || password.length < 6 || Buffer.byteLength(password) > 72) {
+    throw new Error('Default admin configuration requires a valid email and a password of at least six characters and at most 72 UTF-8 bytes.');
   }
   if (await users.findOne(emailOwnerFilter(email))) {
     console.warn('[Admin bootstrap] DEFAULT_ADMIN_EMAIL is already owned; choose an unused email. Existing users are never promoted automatically.');

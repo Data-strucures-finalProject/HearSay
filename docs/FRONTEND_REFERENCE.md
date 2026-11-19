@@ -50,6 +50,10 @@ tab's sessionStorage and cleared after the callback. Linking succeeds or display
 a conflict/cancellation error on Profile; it does not switch to an existing
 Google account. AuthCallback avoids exchanging a one-time code twice under
 StrictMode. Google authorization requires localhost or HTTPS for Web Crypto.
+If Google sign-in matches an existing email without a linked provider identity,
+the callback explains how to sign in first and link Google from Profile.
+Profile logout clears the local auth state only after the server confirms
+success; a failed request leaves a visible retry message and retains the session UI.
 
 After linking, `GoogleProfileChoices` opens automatically with three unchecked replacement choices for first name, last name and primary email. Opening focuses the heading and scrolls the choices into view. The menu and its labeled reopen button appear only while Google is connected; the button explains which details can be copied. Keeping current details leaves all three unchanged. `AccountEmails` lists saved login addresses, allows choosing a primary and removing other addresses, and explicitly confirms Google disconnection when its email is removed. Profile updates refresh the auth cache and shared events. Historical addresses are server-only and do not grant login access.
 

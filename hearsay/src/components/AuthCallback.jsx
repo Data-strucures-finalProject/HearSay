@@ -4,6 +4,7 @@ import { emitAuthChange } from '../utils/authBus';
 import { GOOGLE_AUTH_FLOW_KEY } from '../utils/googleAuth';
 
 const errors = {
+  google_link_required: 'An account already uses this email. Sign in with its existing login method, then link Google from Profile.',
   google_account_in_use: 'This Google account is already linked to another HearSay account. Your account has not changed.',
   google_already_linked: 'Your HearSay account already has a different Google account linked.',
   invalid_google_auth_state: 'Google authorization expired or could not be verified. Please try again.',

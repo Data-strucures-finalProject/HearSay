@@ -1,6 +1,6 @@
 // Run through scripts/tests/run.cmd, which stages the suite in /app/tests.
 // Writes only to a uniquely named temporary database and drops that database on exit.
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { ObjectId, Double } from 'mongodb';
 import assert from 'node:assert/strict';
@@ -20,10 +20,10 @@ let cookie = '';
 let serverLogs = '';
 const results = [];
 function record(check, details) { results.push({ check, ...details }); }
-async function request(path, { method = 'GET', body, authenticated = true, clientIp } = {}) {
+async function request(path, { method = 'GET', body, authenticated = true, clientIp, headers = {} } = {}) {
   const response = await fetch(origin + path, {
     method,
-    headers: { 'Content-Type': 'application/json', ...(authenticated && cookie ? { Cookie: cookie } : {}), ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(authenticated && cookie ? { Cookie: cookie } : {}), ...(clientIp ? { 'X-Forwarded-For': clientIp } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const setCookie = response.headers.get('set-cookie');
@@ -54,7 +54,17 @@ try {
   assert.equal(rejectsCrossSiteMutation({ method: 'GET', headers: { origin: 'https://evil.example' } }, ['https://hearsay.gripe']), false);
   assert.throws(() => validateProductionOrigins([], 'true'));
   assert.throws(() => validateProductionOrigins(['https://hearsay.gripe'], 'false'));
+  for (const invalid of ['ftp://localhost', 'ws://127.0.0.1', 'http://remote.example', 'https://example.com/path', 'https://user:password@example.com']) {
+    assert.throws(() => validateProductionOrigins([invalid], 'true'));
+  }
   record('production security configuration', { secureCookieRequired: true, originAllowlistValidated: true, crossSiteMutationsRejected: true });
+  for (const secret of ['', 'short']) {
+    const invalidConfig = spawnSync(process.execPath, ['server/index.js'], {
+      env: { ...process.env, NODE_ENV: 'production', SESSION_SECRET: secret }, encoding: 'utf8',
+    });
+    assert.notEqual(invalidConfig.status, 0);
+    assert.match(invalidConfig.stderr, /SESSION_SECRET must contain at least 32 bytes/);
+  }
   execFileSync(process.execPath, ['server/scripts/sync-schema-scripts.mjs', '--check']);
   server = spawn(process.execPath, ['--import', './tests/fixtures/providers.mjs', 'server/index.js'], {
     env: { ...process.env, PORT: String(port), NODE_ENV: 'development', TRUST_PROXY: 'loopback', SESSION_COOKIE_SECURE: 'false', MONGO_APP_USERNAME: '', MONGO_APP_PASSWORD: '', MONGO_APP_AUTH_SOURCE: '', SPOTIFY_CLIENT_ID: 'audit-client', SPOTIFY_CLIENT_SECRET: 'audit-secret', GOOGLE_CLIENT_ID: 'audit-client', GOOGLE_CLIENT_SECRET: 'audit-secret' },
@@ -72,6 +82,7 @@ try {
   const { initializeDefaultAdmin } = await import('../server/admin.js');
   const bootstrapFixtures = database.collection('adminBootstrapFixtures');
   const bootstrapDatabase = { collection: () => bootstrapFixtures };
+  await assert.rejects(initializeDefaultAdmin(bootstrapDatabase, { NODE_ENV: 'production' }), /DEFAULT_ADMIN_PASSWORD/);
   await bootstrapFixtures.insertOne({ email: 'occupied@example.invalid', role: 'user' });
   assert.equal((await initializeDefaultAdmin(bootstrapDatabase, { DEFAULT_ADMIN_EMAIL: 'occupied@example.invalid', DEFAULT_ADMIN_PASSWORD: 'fixture-password' })).conflict, true);
   assert.equal((await bootstrapFixtures.findOne({ email: 'occupied@example.invalid' })).role, 'user');
@@ -150,6 +161,11 @@ try {
   assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'x'.repeat(250) + '@example.invalid', password: 'example-password', firstname: 'Audit', lastname: 'Reviewer' } })).status, 400);
   assert.equal((await request('/api/auth/local/signup', { method: 'POST', body: { email: 'missing-name@example.invalid', password: 'example-password' } })).status, 400);
   const email = 'reviewer@example.invalid';
+  for (const password of ['x'.repeat(73), '\u{1F512}'.repeat(19)]) {
+    const overlong = await request('/api/auth/local/signup', { method: 'POST', clientIp: '198.51.100.20', body: { email, password, firstname: 'Audit', lastname: 'Reviewer' } });
+    assert.equal(overlong.status, 400);
+    assert.equal(overlong.data.error, 'password_too_long');
+  }
   const signup = await request('/api/auth/local/signup', { method: 'POST', body: { email, password: 'example-password', firstname: 'Audit', lastname: 'Reviewer', role: 'admin', isDefaultAdmin: true } });
   assert.equal(signup.status, 200);
   assert.equal(signup.data.user.role, 'user');
@@ -160,6 +176,19 @@ try {
   assert.notEqual(cookie, adminCookie);
   record('admin bootstrap and role boundaries', { oneDefaultAdmin: true, noCredentialReset: true, guestDenied: true, regularUserDenied: true, clientRoleInjectionIgnored: true, liveRoleRevocation: true, adminOverview: true });
   assert.notEqual(cookie, anonymousCookie, 'signup must rotate the anonymous session');
+  const rotationSession = (await request('/api/session')).data.id;
+  const beforeRotation = cookie;
+  await database.collection(process.env.SESSIONS_COLLECTION || 'expressSessions').updateOne({ _id: rotationSession }, { $set: { 'session.__lastRotated': 1 } });
+  assert.equal((await request('/api/discussions?type=album&oid=rotation-fixture')).status, 200);
+  assert.notEqual(cookie, beforeRotation, 'mounted discussion routes must rotate expired session IDs');
+  assert.equal(await database.collection(process.env.SESSIONS_COLLECTION || 'expressSessions').findOne({ _id: rotationSession }), null);
+  const cacheResponse = await fetch(origin + '/api/me', { headers: { Cookie: cookie } });
+  assert.equal(cacheResponse.headers.get('cache-control'), 'no-store');
+  assert.equal(cacheResponse.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(cacheResponse.headers.get('x-powered-by'), null);
+  await request('/api/health?code=audit-private-query-code');
+  await request('/api/profile/update', { method: 'POST', body: { firstname: 'Audit', lastname: 'Reviewer', nested: { code: 'audit-private-nested-code' } } });
+  record('session rotation and response privacy', { mountedRoutesRotate: true, previousSessionRemoved: true, noStore: true, noQueryOrBodyLogging: true });
   record('local signup', { status: signup.status, created: signup.data?.created });
   const usersForSchema = database.collection('users');
   for (const invalid of [{ loginEmails: [123] }, { emailHistory: ['duplicate', 'duplicate'] }, { googleProfile: { email: 'missing-required@example.invalid' } }]) {
@@ -346,6 +375,12 @@ try {
   const emailCollision = await exchangeGoogle('audit-local-email-profile', 'link');
   assert.equal(emailCollision.status, 409);
   assert.equal(emailCollision.data.error, 'google_account_in_use');
+  const collisionOwnerBefore = await database.collection('users').findOne({ _id: new ObjectId(secondId) });
+  const signInCollision = await exchangeGoogle('audit-local-email-profile');
+  assert.equal(signInCollision.status, 409);
+  assert.equal(signInCollision.data.error, 'google_link_required');
+  assert.equal((await request('/api/me')).data.user.oid, userId);
+  assert.deepEqual(await database.collection('users').findOne({ _id: new ObjectId(secondId) }), collisionOwnerBefore);
   const linked = await exchangeGoogle('audit-unused-profile', 'link');
   assert.equal(linked.status, 200);
   assert.equal(linked.data.linked, true);
@@ -415,12 +450,32 @@ try {
   for (const [code, status] of [['audit-missing-profile', 502], ['audit-unverified-profile', 401]]) {
     assert.equal((await exchangeGoogle(code)).status, status);
   }
+  const freshGoogle = await exchangeGoogle('audit-other-unused-profile');
+  assert.equal(freshGoogle.status, 200, 'a new Google identity can create an account');
+  assert.equal((await exchangeGoogle('audit-other-unused-profile')).data.user.oid, freshGoogle.data.user.oid);
+  assert.equal(await database.collection('users').countDocuments({ 'accounts.uid': 'audit-other-google' }), 1);
   const googleLogin = await exchangeGoogle('audit-valid-profile');
   assert.equal(googleLogin.status, 200);
   const passwordLink = await request('/api/auth/local/set-password', { method: 'POST', body: { password: 'example-password' } });
   assert.equal(passwordLink.status, 200);
   assert.ok((await database.collection('users').findOne({ email: 'google-only@example.invalid' })).passwordHash);
-  assert.doesNotMatch(serverLogs, /audit-private-(spotify-token|google-token|google-refresh|verifier)/);
+  const passwordSessionCookie = cookie;
+  assert.equal((await request('/api/auth/local/set-password', { method: 'POST', body: { password: '\u{1F512}'.repeat(19) } })).data.error, 'password_too_long');
+  const otherDeviceLogin = await fetch(origin + '/api/auth/local/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'google-only@example.invalid', password: 'example-password' }),
+  });
+  assert.equal(otherDeviceLogin.status, 200);
+  const otherDeviceCookie = otherDeviceLogin.headers.get('set-cookie').split(';')[0];
+  assert.equal((await request('/api/auth/local/set-password', { method: 'POST', body: { password: 'new-fixture-password' } })).status, 401);
+  assert.equal((await request('/api/auth/local/set-password', { method: 'POST', body: { password: 'new-fixture-password', currentPassword: 'wrong' } })).status, 401);
+  assert.equal((await request('/api/auth/local/set-password', { method: 'POST', body: { password: 'new-fixture-password', currentPassword: 'example-password' } })).status, 200);
+  assert.notEqual(cookie, passwordSessionCookie);
+  assert.equal((await (await fetch(origin + '/api/me', { headers: { Cookie: passwordSessionCookie } })).json()).authenticated, false);
+  assert.equal((await (await fetch(origin + '/api/me', { headers: { Cookie: otherDeviceCookie } })).json()).authenticated, false, 'password replacement must revoke other devices');
+  assert.equal((await request('/api/me')).data.authenticated, true);
+  assert.equal(await database.collection(process.env.SESSIONS_COLLECTION || 'expressSessions').countDocuments({ 'session.oauth': { $exists: true } }), 0);
+  assert.doesNotMatch(serverLogs, /audit-private-(spotify-token|google-token|google-refresh|verifier|query-code|nested-code)/);
   record('account linking and provider guards', { unauthenticatedSignup: link.status, authenticatedPasswordSetup: passwordLink.status, googleProfileGuardsPassed: true, credentialsLogged: false });
   const pendingGoogleUser = await database.collection('users').findOne({ email: 'google-only@example.invalid' });
   await database.collection('users').updateOne({ _id: pendingGoogleUser._id }, { $set: { deletionPending: true } });
@@ -506,6 +561,10 @@ try {
     await delay(250);
   }
   assert.equal(productionReady, true, 'production audit server must start');
+  for (const headers of [{ Origin: 'https://evil.example' }, { Referer: 'https://evil.example/page' }, { 'Sec-Fetch-Site': 'cross-site' }]) {
+    assert.equal((await request('/api/auth/local/login', { method: 'POST', headers, body: { email: 'invalid' } })).status, 403);
+  }
+  assert.equal((await request('/api/auth/local/login', { method: 'POST', headers: { Origin: origin }, body: { email: 'invalid' } })).status, 400);
   for (const path of ['/api/debug/routes', '/api/spotify/debug/token', '/api/reviews/debug/find', '/api/reviews/debug/list']) {
     assert.equal((await request(path)).status, 404);
   }

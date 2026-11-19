@@ -51,7 +51,9 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      const response = await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error('Logout failed; your session may still be active.');
       setUser(null);
       try {
         localStorage.removeItem('hs_user');

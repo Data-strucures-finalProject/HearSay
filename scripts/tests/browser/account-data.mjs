@@ -5,12 +5,16 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/chromium-brows
 try {
   const page = await browser.newPage();
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  let deleted = false, deleteRequests = 0, failDelete = false, failExport = false;
+  let deleted = false, deleteRequests = 0, failDelete = false, failExport = false, failLogout = true;
   const user = { oid: '000000000000000000000001', firstname: 'Fixture', email: 'fixture@example.invalid' };
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     let body = { ok: true }, status = 200;
     if (path === '/api/me') body = { authenticated: !deleted, user: deleted ? null : user };
+    if (path === '/api/logout') {
+      if (failLogout) { status = 503; body = { ok: false }; }
+      else deleted = true;
+    }
     if (path === '/api/profile' && route.request().method() === 'GET') body = { ok: true, profile: { ...user, accounts: [{ kind: 'Local' }], loginEmails: [user.email] } };
     if (path.startsWith('/api/profile/export.')) {
       if (failExport) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"ok":false}' });
@@ -24,6 +28,12 @@ try {
     return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   });
   await page.goto('http://frontend/profile');
+  await page.evaluate(value => localStorage.setItem('hs_user', JSON.stringify(value)), user);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Logout', exact: true }).click();
+  await page.getByRole('alert').filter({ hasText: 'You are still signed in' }).waitFor();
+  assert.equal(new URL(page.url()).pathname, '/profile');
+  assert.ok(await page.evaluate(() => localStorage.getItem('hs_user')));
   for (const format of ['CSV', 'PDF']) {
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: `Export account data (${format})`, exact: true }).click();
@@ -46,5 +56,12 @@ try {
   await page.waitForURL('http://frontend/auth');
   assert.equal(await page.evaluate(() => localStorage.getItem('hs_user')), null);
   assert.equal(deleted, true); assert.deepEqual(errors, []);
+  deleted = false;
+  failLogout = false;
+  await page.goto('http://frontend/profile');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Logout', exact: true }).click();
+  await page.waitForURL('http://frontend/');
+  assert.equal(await page.evaluate(() => localStorage.getItem('hs_user')), null);
   console.log(JSON.stringify({ csvDownload: true, pdfDownload: true, exportFailureVisible: true, cancelDoesNotDelete: true, deletionFailureRetry: true, confirmedDeletionSignsOut: true, pageErrors: errors }));
 } finally { await browser.close(); }

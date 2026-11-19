@@ -9,6 +9,7 @@
     "db:apply-schemas": "node server/scripts/apply-schemas.mjs",
     "db:provision-app-user": "node server/scripts/provision-app-user.mjs",
     "db:seed-default-admin": "node server/scripts/seed-default-admin.mjs",
+    "db:seed-example": "node server/scripts/seed-example.mjs",
     "db:migrate-track-ratings": "node server/scripts/migrate-track-ratings.mjs",
     "db:apply-views": "node server/scripts/apply-views.mjs",
     "db:validate": "node server/scripts/validate-database.mjs",

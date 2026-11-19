@@ -1,0 +1,406 @@
+{
+    "source":  "Spotify catalogue metadata from the HearSay November 14, 2026 demo",
+    "albums":  [
+                   {
+                       "id":  "3WZZF72ihlKPZBS4zSsNHl",
+                       "title":  "you seem pretty sad for a girl so in love",
+                       "artistId":  "1McMsnEElThX1knmY4oliG",
+                       "releaseDate":  "2026-06-12",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b2735cf234eeb7a2edf44bf64a46",
+                       "tracks":  [
+                                      {
+                                          "id":  "0yO9QD2Ga7eUzqnNYsSSPo",
+                                          "title":  "drop dead",
+                                          "artistId":  "1McMsnEElThX1knmY4oliG"
+                                      },
+                                      {
+                                          "id":  "4LfCY65LvojKjWEnU7fNN4",
+                                          "title":  "stupid song",
+                                          "artistId":  "1McMsnEElThX1knmY4oliG"
+                                      },
+                                      {
+                                          "id":  "407LgLkk1uM3wMO6jVRe0a",
+                                          "title":  "honeybee",
+                                          "artistId":  "1McMsnEElThX1knmY4oliG"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "2ANVost0y2y52ema1E9xAZ",
+                       "title":  "Thriller",
+                       "artistId":  "3fMbdgg4jU18AjLCKBhRSm",
+                       "releaseDate":  "1982-11-30",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b27332a7d87248d1b75463483df5",
+                       "tracks":  [
+                                      {
+                                          "id":  "1hu2s7qkm5bo03eODpRQO3",
+                                          "title":  "Wanna Be Startin\u0027 Somethin\u0027",
+                                          "artistId":  "3fMbdgg4jU18AjLCKBhRSm"
+                                      },
+                                      {
+                                          "id":  "6XYbMGvtl6tlPoGWaiH7EY",
+                                          "title":  "Baby Be Mine",
+                                          "artistId":  "3fMbdgg4jU18AjLCKBhRSm"
+                                      },
+                                      {
+                                          "id":  "4IT6vDuKprKl6jyVndlY8V",
+                                          "title":  "The Girl Is Mine (with Paul McCartney)",
+                                          "artistId":  "3fMbdgg4jU18AjLCKBhRSm"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "5IZ8sY5FjtL9hloXpv0XbD",
+                       "title":  "I’m The Problem",
+                       "artistId":  "4oUHIQIBe0LHzYfvXNW4QM",
+                       "releaseDate":  "2025-05-16",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b27335ea219ce47813b5e2dc3745",
+                       "tracks":  [
+                                      {
+                                          "id":  "7AeM1BGYM7emrqmQn1PuWv",
+                                          "title":  "I\u0027m The Problem",
+                                          "artistId":  "4oUHIQIBe0LHzYfvXNW4QM"
+                                      },
+                                      {
+                                          "id":  "4gfrYDtaRmp6HPvN80V2ob",
+                                          "title":  "I Got Better",
+                                          "artistId":  "4oUHIQIBe0LHzYfvXNW4QM"
+                                      },
+                                      {
+                                          "id":  "3KC1yCIfkLrRaeeMUEKvg3",
+                                          "title":  "Superman",
+                                          "artistId":  "4oUHIQIBe0LHzYfvXNW4QM"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "6nrtxtgaD9zSYBl9APvOCH",
+                       "title":  "Dandelion",
+                       "artistId":  "6BRxQ8cD3eqnrVj6WKDok8",
+                       "releaseDate":  "2026-04-10",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b2738606848da949bbaddf447d87",
+                       "tracks":  [
+                                      {
+                                          "id":  "3vKaJ5bmntN1zgcAE8jweF",
+                                          "title":  "Froggy Went A Courtin\u0027 - Intro",
+                                          "artistId":  "6BRxQ8cD3eqnrVj6WKDok8"
+                                      },
+                                      {
+                                          "id":  "34D5CH3DKBGpAj8ktFOAUH",
+                                          "title":  "Dandelion",
+                                          "artistId":  "6BRxQ8cD3eqnrVj6WKDok8"
+                                      },
+                                      {
+                                          "id":  "7scFxt9VhL4FJwuPSfRlfN",
+                                          "title":  "Choosin\u0027 Texas",
+                                          "artistId":  "6BRxQ8cD3eqnrVj6WKDok8"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "2fnkyn9EybagIoFJ7a13oz",
+                       "title":  "The Great Divide",
+                       "artistId":  "2RQXRUsr4IW1f3mKyKsy4B",
+                       "releaseDate":  "2026-04-24",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b273d879855b819250d3d00a1a38",
+                       "tracks":  [
+                                      {
+                                          "id":  "4fEUmNN8KK5sNqvKjBstKg",
+                                          "title":  "End of August",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      },
+                                      {
+                                          "id":  "3iU2qsthCTo5EeTE03l3Si",
+                                          "title":  "Doors",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      },
+                                      {
+                                          "id":  "3WRgRy12YW4I9mjodKXWwy",
+                                          "title":  "American Cars",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "1LDp3KxiAmehFGoKcVI1Pw",
+                       "title":  "BREAK EVEN",
+                       "artistId":  "36cgvBn0aadzOijnjjwqMN",
+                       "releaseDate":  "2026-10-26",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b273fdee0a397fcc7a9db4357137",
+                       "tracks":  [
+                                      {
+                                          "id":  "061FHfBprXFbSkTqQr5nGK",
+                                          "title":  "Super in Love",
+                                          "artistId":  "36cgvBn0aadzOijnjjwqMN"
+                                      },
+                                      {
+                                          "id":  "43qlhwe1QGcr1T7eeXcRqn",
+                                          "title":  "More",
+                                          "artistId":  "36cgvBn0aadzOijnjjwqMN"
+                                      },
+                                      {
+                                          "id":  "7p5vmTVOOwY4CFG1EkmSpU",
+                                          "title":  "You’re Under Arrest",
+                                          "artistId":  "36cgvBn0aadzOijnjjwqMN"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "0Iccs76G7e4e403S9VRqiA",
+                       "title":  "BETTER OVER TIME",
+                       "artistId":  "6qxpnaukVayrQn6ViNvu9I",
+                       "releaseDate":  "2026-10-30",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b273e1108a4abb822c713fe13a51",
+                       "tracks":  [
+                                      {
+                                          "id":  "3PfZkf3t56OxgQp67ktH6J",
+                                          "title":  "STAND ON BUSINESS",
+                                          "artistId":  "6qxpnaukVayrQn6ViNvu9I"
+                                      },
+                                      {
+                                          "id":  "6tsTH3fpf29Hk3psCrf0tT",
+                                          "title":  "NO LIMIT (feat. Leon Thomas)",
+                                          "artistId":  "6qxpnaukVayrQn6ViNvu9I"
+                                      },
+                                      {
+                                          "id":  "75tkV3JctVpcYIvqxNz7Qx",
+                                          "title":  "BURN (feat. Ava Max)",
+                                          "artistId":  "6qxpnaukVayrQn6ViNvu9I"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "50ZenUP4O2Q5eCy2NRNvuz",
+                       "title":  "Stick Season",
+                       "artistId":  "2RQXRUsr4IW1f3mKyKsy4B",
+                       "releaseDate":  "2022-10-14",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b2736ee35072df1af802cca09918",
+                       "tracks":  [
+                                      {
+                                          "id":  "4O2rRsoSPb5aN7N3tG6Y3v",
+                                          "title":  "Northern Attitude",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      },
+                                      {
+                                          "id":  "0mflMxspEfB0VbI1kyLiAv",
+                                          "title":  "Stick Season",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      },
+                                      {
+                                          "id":  "7ByxizhA4GgEf7Sxomxhze",
+                                          "title":  "All My Love",
+                                          "artistId":  "2RQXRUsr4IW1f3mKyKsy4B"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "4a6NzYL1YHRUgx9e3YZI6I",
+                       "title":  "The Life of a Showgirl",
+                       "artistId":  "06HL4z0CvFAxyc27GXpf02",
+                       "releaseDate":  "2025-10-03",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b273d7812467811a7da6e6a44902",
+                       "tracks":  [
+                                      {
+                                          "id":  "53iuhJlwXhSER5J2IYYv1W",
+                                          "title":  "The Fate of Ophelia",
+                                          "artistId":  "06HL4z0CvFAxyc27GXpf02"
+                                      },
+                                      {
+                                          "id":  "1jgTiNob5cVyXeJ3WgX5bL",
+                                          "title":  "Elizabeth Taylor",
+                                          "artistId":  "06HL4z0CvFAxyc27GXpf02"
+                                      },
+                                      {
+                                          "id":  "3yWuTOYDztXjZxdE2cIRUa",
+                                          "title":  "Opalite",
+                                          "artistId":  "06HL4z0CvFAxyc27GXpf02"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "4GUyvsWXjynz867s6Lww2p",
+                       "title":  "Perfecth",
+                       "artistId":  "4pejUc4iciQfgdX6OKulQn",
+                       "releaseDate":  "2026-10-30",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b27364a50d91a0b602eb83dd26a2",
+                       "tracks":  [
+                                      {
+                                          "id":  "6ejg1bygWhn8tLndr8DDDa",
+                                          "title":  "It\u0027s Only Love",
+                                          "artistId":  "4pejUc4iciQfgdX6OKulQn"
+                                      },
+                                      {
+                                          "id":  "6JxNj2lPGxNtcH1C0fdH85",
+                                          "title":  "Insignificant Other",
+                                          "artistId":  "4pejUc4iciQfgdX6OKulQn"
+                                      },
+                                      {
+                                          "id":  "2ANjlKAnC17LGkJe1NsCVT",
+                                          "title":  "Where The Goth Girls At?",
+                                          "artistId":  "4pejUc4iciQfgdX6OKulQn"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "1nrVofqDRs7cpWXJ49qTnP",
+                       "title":  "SOS",
+                       "artistId":  "7tYKF4w9nC0nq9CsPZTHyP",
+                       "releaseDate":  "2022-12-08",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b273c5276ed6cb0287df8d9be07f",
+                       "tracks":  [
+                                      {
+                                          "id":  "6prribvZEc0z79BkGLuuhJ",
+                                          "title":  "SOS",
+                                          "artistId":  "7tYKF4w9nC0nq9CsPZTHyP"
+                                      },
+                                      {
+                                          "id":  "1Qrg8KqiBpW07V7PNxwwwL",
+                                          "title":  "Kill Bill",
+                                          "artistId":  "7tYKF4w9nC0nq9CsPZTHyP"
+                                      },
+                                      {
+                                          "id":  "2KiLsNebHpP3Obhrj4wZWr",
+                                          "title":  "Seek \u0026 Destroy",
+                                          "artistId":  "7tYKF4w9nC0nq9CsPZTHyP"
+                                      }
+                                  ]
+                   },
+                   {
+                       "id":  "0l8zYqoUeBYg47Gmevq9HZ",
+                       "title":  "The Art of Loving",
+                       "artistId":  "00x1fYSGhdqScXBRpSj3DW",
+                       "releaseDate":  "2025-09-26",
+                       "image":  "https://i.scdn.co/image/ab67616d0000b2739a336bfb6d40bbd90a507417",
+                       "tracks":  [
+                                      {
+                                          "id":  "1TZgdopOZCUxpS5bp1i0Zz",
+                                          "title":  "The Art of Loving (Intro)",
+                                          "artistId":  "00x1fYSGhdqScXBRpSj3DW"
+                                      },
+                                      {
+                                          "id":  "7qEiBWlztvDFrILdizFULx",
+                                          "title":  "Nice To Each Other",
+                                          "artistId":  "00x1fYSGhdqScXBRpSj3DW"
+                                      },
+                                      {
+                                          "id":  "2dmBAIjIfisvCG7G9YEh0g",
+                                          "title":  "Lady Lady",
+                                          "artistId":  "00x1fYSGhdqScXBRpSj3DW"
+                                      }
+                                  ]
+                   }
+               ],
+    "artists":  [
+                    {
+                        "id":  "1McMsnEElThX1knmY4oliG",
+                        "name":  "Olivia Rodrigo",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5ebb14eb4dcfd2f3858bed06e44",
+                        "genres":  [
+
+                                   ],
+                        "followers":  58708661,
+                        "popularity":  95
+                    },
+                    {
+                        "id":  "3fMbdgg4jU18AjLCKBhRSm",
+                        "name":  "Michael Jackson",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb997cc9a4aec335d46c9481fd",
+                        "genres":  [
+
+                                   ],
+                        "followers":  57591655,
+                        "popularity":  92
+                    },
+                    {
+                        "id":  "4oUHIQIBe0LHzYfvXNW4QM",
+                        "name":  "Morgan Wallen",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb98a9ee5f9cac5e3efa057f30",
+                        "genres":  [
+                                       "country"
+                                   ],
+                        "followers":  16668956,
+                        "popularity":  90
+                    },
+                    {
+                        "id":  "6BRxQ8cD3eqnrVj6WKDok8",
+                        "name":  "Ella Langley",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5ebc4670378a4188c3174ef2ca9",
+                        "genres":  [
+                                       "country"
+                                   ],
+                        "followers":  2751979,
+                        "popularity":  87
+                    },
+                    {
+                        "id":  "2RQXRUsr4IW1f3mKyKsy4B",
+                        "name":  "Noah Kahan",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb5b141d30d14fb78458dac5ce",
+                        "genres":  [
+
+                                   ],
+                        "followers":  6309374,
+                        "popularity":  91
+                    },
+                    {
+                        "id":  "36cgvBn0aadzOijnjjwqMN",
+                        "name":  "ILLIT",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb5191923deb0a17fa49bf075b",
+                        "genres":  [
+                                       "k-pop"
+                                   ],
+                        "followers":  8999744,
+                        "popularity":  85
+                    },
+                    {
+                        "id":  "6qxpnaukVayrQn6ViNvu9I",
+                        "name":  "BigXthaPlug",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5ebcaecec918fd007e143100ed0",
+                        "genres":  [
+                                       "southern hip hop"
+                                   ],
+                        "followers":  2853208,
+                        "popularity":  82
+                    },
+                    {
+                        "id":  "06HL4z0CvFAxyc27GXpf02",
+                        "name":  "Taylor Swift",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb12184bdd29403de54cb9d9c7",
+                        "genres":  [
+
+                                   ],
+                        "followers":  166704734,
+                        "popularity":  98
+                    },
+                    {
+                        "id":  "4pejUc4iciQfgdX6OKulQn",
+                        "name":  "Queens of the Stone Age",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb69e0a759aed9e92dd2c7ce02",
+                        "genres":  [
+                                       "stoner rock",
+                                       "alternative rock"
+                                   ],
+                        "followers":  4150113,
+                        "popularity":  76
+                    },
+                    {
+                        "id":  "7tYKF4w9nC0nq9CsPZTHyP",
+                        "name":  "SZA",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5ebfd0a9fb6c252a3ba44079acf",
+                        "genres":  [
+                                       "r\u0026b"
+                                   ],
+                        "followers":  37567337,
+                        "popularity":  90
+                    },
+                    {
+                        "id":  "00x1fYSGhdqScXBRpSj3DW",
+                        "name":  "Olivia Dean",
+                        "image":  "https://i.scdn.co/image/ab6761610000e5eb5c7577ad44daeb7ce4b941a1",
+                        "genres":  [
+                                       "pop soul"
+                                   ],
+                        "followers":  5594069,
+                        "popularity":  90
+                    }
+                ]
+}

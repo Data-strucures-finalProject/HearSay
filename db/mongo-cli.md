@@ -122,6 +122,21 @@ mongoexport --host "$mongo_server" --port "$mongo_port" --db "$mongo_db" --colle
 
 Compass can import/export collection data as JSON/CSV. These operations are separate from downloads in the HearSay web UI. Select the intended database/collection and format explicitly. For remote/Atlas connections use the appropriate authenticated URI and TLS settings; percent-encode special characters in URI credentials.
 
+## Example data
+
+The repository includes a 12-album sample of the demo catalogue, with 36 songs, 11 artists, four fictional reviewers, and threaded discussions. The loader creates the sample reviews, votes, and track ratings from source. It needs no Spotify or Google credentials. Live Spotify features still use the configured Spotify account.
+
+Start the local Compose stack with `.env.example` settings (`NODE_ENV=development`) and wait for the backend to initialize the database. Then run:
+
+```sh
+docker compose exec -T backend npm run db:seed-example
+docker compose exec -T backend npm run db:validate
+```
+
+For native development, run the same npm commands from `hearsay` after `npm run db:apply-schemas`. Load the sample into a fresh development database. The loader preserves existing accounts, refuses unrelated media or reviews, and can be rerun without duplicating records.
+
+The first import prints the new example accounts and a generated password for local sign-in. To reuse a private demo password, set `EXAMPLE_DEMO_PASSWORD` in the command's environment. For Docker, pass it through with `docker compose exec -T -e EXAMPLE_DEMO_PASSWORD backend npm run db:seed-example`. The repository fixture contains catalogue metadata only. Use regular [backups](#windows-powershell) for real accounts and reviews.
+
 ## Demo seed
 
 Local demo credentials are stored in `db/local-demo/demo-credentials.json` relative to the repository root. This Git-ignored file contains the five demo account emails and passwords. The same directory retains `catalog.json` (resolved Spotify metadata) and `seed-report.json` (seed provenance). These files are outside the application build context; do not copy credentials into documentation or source files.

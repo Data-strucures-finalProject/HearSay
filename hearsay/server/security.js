@@ -15,7 +15,7 @@ export function validateProductionOrigins(origins, secureCookie) {
     if (url.origin !== origin) {
       throw new Error('[CONFIG] API_ORIGIN entries must be origins without paths');
     }
-    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
       throw new Error('[CONFIG] API_ORIGIN contains a non-HTTPS remote origin');
     }
   }

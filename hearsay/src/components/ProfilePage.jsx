@@ -27,6 +27,7 @@ export default function ProfilePage() {
   const [localLinkError, setLocalLinkError] = useState(null);
   const [localLinkSuccess, setLocalLinkSuccess] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [logoutError, setLogoutError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,15 +54,18 @@ export default function ProfilePage() {
     if (logoutLoading) return;
     if (!confirm('Log out now?')) return;
     setLogoutLoading(true);
+    setLogoutError(null);
     try {
-      await fetch('/api/logout', { method: 'POST', credentials: 'include' });
-    } catch (e) {
-      console.warn('Logout request failed', e);
-    } finally {
+      const response = await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error('logout_failed');
       try { localStorage.removeItem('hs_user'); } catch { /* Storage is optional; authorization remains server-side. */ }
       emitAuthChange({ authenticated: false });
-      setLogoutLoading(false);
       navigate('/');
+    } catch {
+      setLogoutError('Unable to log out. You are still signed in. Please try again.');
+    } finally {
+      setLogoutLoading(false);
     }
   };
 
@@ -109,6 +113,7 @@ export default function ProfilePage() {
         </div>
 
         {googleConnected && reviewGoogleDetails && p.googleProfile && <GoogleProfileChoices profile={p} onUpdated={applyAccountUpdate} onClose={() => setReviewGoogleDetails(false)} />}
+        {logoutError && <p role="alert" className="px-6 pt-4 text-red-600 dark:text-red-400">{logoutError}</p>}
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="border-2 border-black dark:border-white p-4">
             <h2 className="font-semibold text-black dark:text-white mb-2"><span className="text-black dark:text-white">Basic Info</span></h2>
@@ -282,7 +287,7 @@ export default function ProfilePage() {
                         });
                         const data = await resp.json().catch(() => ({}));
                         if (!resp.ok || !data.ok) {
-                          setLocalLinkError(data.error || 'Failed to link local account');
+                          setLocalLinkError(data.error === 'password_too_long' ? 'Password must be at most 72 UTF-8 bytes. Use fewer characters.' : data.error || 'Failed to link local account');
                         } else {
                           // Update profile state to include Local account
                           setState(s => ({ ...s, profile: { ...s.profile, accounts: [...(s.profile.accounts || []), { kind: 'Local' }] } }));
